@@ -53,7 +53,7 @@ from mcp_ingest import describe, autoinstall
 # Generate manifest.json and index.json
 describe(
     name="my-agent",
-    url="[http://127.0.0.1:8080/sse](http://127.0.0.1:8080/sse)",
+    url="http://127.0.0.1:8080/sse",
     tools=["chat", "file-reader"],
     resources=[{"uri": "file://agent.py", "name": "source_code"}],
     description="A simple yet powerful AI agent.",
@@ -61,7 +61,7 @@ describe(
 )
 
 # Optionally, register with your local MatrixHub instance
-autoinstall(matrixhub_url="[http://127.0.0.1:7300](http://127.0.0.1:7300)")
+autoinstall(matrixhub_url="http://127.0.0.1:7300")
 ```
 
 ### For CLI Users
@@ -74,7 +74,7 @@ mcp-ingest pack ./my-agent --out ./dist
 
 # Register the packaged project with MatrixHub
 mcp-ingest register \
-  --matrixhub [http://127.0.0.1:7300](http://127.0.0.1:7300) \
+  --matrixhub http://127.0.0.1:7300 \
   --manifest ./dist/manifest.json
 ```
 
