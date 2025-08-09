@@ -1,0 +1,12 @@
+{
+  "type": "mcp_server",
+  "id": "watsonx-agent",
+  "name": "Watsonx Chat Agent",
+  "version": "0.1.0",
+  "mcp_registration": {
+    "tool": {"id":"watsonx-chat","name":"watsonx-chat","description":"Chat via Watsonx","integration_type":"MCP"},
+    "resources": [{"id":"watsonx-agent-code","name":"source","type":"inline","uri":"file://server.py"}],
+    "prompts": [],
+    "server": {"name":"watsonx-mcp","description":"Watsonx SSE server","url":"http://127.0.0.1:6288/sse","associated_tools":["watsonx-chat"],"associated_resources":["watsonx-agent-code"],"associated_prompts":[]}
+  }
+}

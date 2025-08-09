@@ -1,0 +1,65 @@
+[build-system]
+requires = ["hatchling>=1.21.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mcp-ingest"
+version = "0.1.0"
+description = "SDK + CLI to describe, validate, and register MCP servers into MatrixHub"
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+license = { text = "Apache-2.0" }
+authors = [{ name = "MatrixHub Contributors" }]
+keywords = ["mcp", "model-context-protocol", "matrixhub", "ingest", "agents"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+]
+
+dependencies = [
+    "httpx>=0.24,<0.29",
+    "pydantic>=2,<3",
+    "anyio>=3.6,<5",
+    "PyYAML>=6.0,<7.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.4",
+    "black>=24.0",
+    "mypy>=1.8",
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "build>=1.0",
+    "twine>=4.0",
+    "types-PyYAML",
+]
+harvester = [
+    "fastapi>=0.110",
+    "uvicorn>=0.23",
+    "SQLAlchemy>=2.0",
+]
+
+[project.scripts]
+mcp-ingest = "mcp_ingest.cli:main"
+
+[tool.ruff]
+line-length = 100
+select = ["E", "F", "I", "B", "UP", "N"]
+ignore = []
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = false
+warn_unused_ignores = true
+show_error_codes = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+addopts = "-q"

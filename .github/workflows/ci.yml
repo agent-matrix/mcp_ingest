@@ -1,0 +1,54 @@
+name: ci
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install package + dev extras
+        run: |
+          python -m pip install -U pip
+          pip install -e ".[dev,harvester]"
+      - name: Ruff (lint)
+        run: ruff check mcp_ingest services
+      - name: Black (format check)
+        run: black --check mcp_ingest services
+      - name: Mypy (typecheck)
+        run: mypy mcp_ingest services
+      - name: Pytest
+        run: pytest --maxfail=1 --disable-warnings -q --cov=mcp_ingest --cov-report=term-missing
+      - name: Build dist
+        run: python -m build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+  # Optional release on tag (requires PYPI_API_TOKEN secret)
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Build
+        run: |
+          python -m pip install -U pip build twine
+          python -m build
+      - name: Publish to PyPI
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          python -m twine upload --non-interactive dist/*
