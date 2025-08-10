@@ -92,6 +92,7 @@ def test_harvest_repo_on_examples(tmp_path: Path) -> None:
 # Network-optional test (README → first link)
 # -----------------------------
 
+
 def _default_branch(owner: str, repo: str) -> str:
     """Best-effort fetch of default branch; fall back to 'main'."""
     headers = {

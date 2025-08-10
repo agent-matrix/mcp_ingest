@@ -58,6 +58,7 @@ class LocalSource:
 # Public API
 # ----------------------------
 
+
 def prepare_source(source: str, *, workdir: str | Path | None = None) -> LocalSource:
     """
     Prepare a local working copy of a source (dir | git | zip).
@@ -129,7 +130,9 @@ def _normalize_github_http_to_git(src: str) -> tuple[str, str | None] | None:
 
 def _classify_source(
     source: str,
-) -> _t.Union[tuple[Literal["dir", "git", "zip"], str | None], tuple[Literal["git"], str | None, str]]:
+) -> _t.Union[
+    tuple[Literal["dir", "git", "zip"], str | None], tuple[Literal["git"], str | None, str]
+]:
     """Return (kind, ref) OR (kind, ref, normalized_src). Ref may be branch/tag/sha for git."""
     parsed = urlparse(source)
 
@@ -178,6 +181,7 @@ def _extract_ref(source: str) -> str | None:
 # ----------------------------
 # ZIP handling
 # ----------------------------
+
 
 def _prepare_from_zip(url_or_file: str, base: Path | None) -> LocalSource:
     # Create temp workspace
@@ -330,6 +334,7 @@ def _strip_singleton_dir(extracted_root: Path) -> Path:
 # Git handling
 # ----------------------------
 
+
 def _prepare_from_git(url: str, ref: str | None, base: Path | None) -> LocalSource:
     tmp_root = Path(tempfile.mkdtemp(prefix="mcpgit-")) if base is None else base
     created_tmp = base is None
@@ -399,6 +404,7 @@ def _run(cmd, *, cwd: Path | None = None, timeout: int = 600) -> subprocess.Comp
 # Directory handling
 # ----------------------------
 
+
 def _prepare_from_dir(path_str: str) -> LocalSource:
     p = Path(path_str).expanduser().resolve()
     if not p.exists() or not p.is_dir():
@@ -416,6 +422,7 @@ def _prepare_from_dir(path_str: str) -> LocalSource:
 # ----------------------------
 # Helpers
 # ----------------------------
+
 
 def _as_fetch_error(exc: Exception, ctx: str) -> FetchError:
     if isinstance(exc, FetchError):

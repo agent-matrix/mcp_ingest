@@ -171,13 +171,14 @@ def extract_urls_from_markdown(md: str) -> list[str]:
         if original_url != url:
             logger.debug(f"Trimmed trailing punctuation from '{original_url}' -> '{url}'")
         urls.append(url)
-    
+
     deduped_urls = _dedupe_preserve_order(urls)
     logger.info(f"Extracted {len(deduped_urls)} unique URLs from markdown.")
     return deduped_urls
 
 
 # --- README discovery -----------------------------------------------------
+
 
 def _parse_github_repo_url(repo_url: str) -> Tuple[str, str]:
     """Return (owner, repo) from a GitHub repository identifier or URL.
@@ -216,7 +217,9 @@ def _parse_github_repo_url(repo_url: str) -> Tuple[str, str]:
     logger.debug(f"Parsed URL: netloc='{parsed.netloc}', path='{parsed.path}'")
     if parsed.netloc.lower() != "github.com":
         logger.error(f"URL netloc is '{parsed.netloc}', but expected 'github.com'.")
-        raise ValueError("Only github.com URLs (or owner/repo short form) are supported in this helper")
+        raise ValueError(
+            "Only github.com URLs (or owner/repo short form) are supported in this helper"
+        )
 
     parts = [p for p in parsed.path.split("/") if p]
     if len(parts) < 2:
@@ -227,7 +230,7 @@ def _parse_github_repo_url(repo_url: str) -> Tuple[str, str]:
     if repo.endswith(".git"):
         repo = repo[:-4]
         logger.debug(f"Removed '.git' suffix from repo name -> '{repo}'")
-        
+
     logger.debug(f"Successfully parsed owner='{owner}', repo='{repo}'")
     return owner, repo
 
@@ -293,14 +296,19 @@ def fetch_readme_markdown(repo_url: str) -> str | None:
         for b in ("main", "master"):
             if b not in branches:
                 branches.append(b)
-        
+
         logger.debug(f"Will search for README on branches in this order: {branches}")
 
         for branch in branches:
             md = _try_fetch_readme(client, owner, repo, branch)
             if md:
                 return md
-        logger.warning("Could not find a README in %s/%s on any of the tried branches: %s", owner, repo, branches)
+        logger.warning(
+            "Could not find a README in %s/%s on any of the tried branches: %s",
+            owner,
+            repo,
+            branches,
+        )
         return None
     finally:
         client.close()
@@ -321,25 +329,25 @@ def _normalize_github_link(url: str) -> RepoTarget | None:
     parsed = urlparse(url)
     if parsed.netloc.lower() != "github.com":
         return None
-        
+
     parts = [p for p in parsed.path.split("/") if p]
     if len(parts) < 2:
         return None
-        
+
     owner, repo = parts[0], parts[1]
-    
+
     if len(parts) >= 4 and parts[2] == "tree":
         ref = parts[3]
         subpath = "/".join(parts[4:]) if len(parts) >= 5 else None
         target = RepoTarget(owner, repo, ref=ref, subpath=subpath or None)
         logger.debug(f"Normalized '{url}' to RepoTarget with subpath: {target}")
         return target
-        
+
     if len(parts) == 2:
         target = RepoTarget(owner, repo)
         logger.debug(f"Normalized '{url}' to base RepoTarget: {target}")
         return target
-        
+
     return None
 
 
@@ -351,16 +359,18 @@ def extract_github_repo_links_from_readme(repo_url: str) -> list[RepoTarget]:
     """
     md = fetch_readme_markdown(repo_url)
     if not md:
-        logger.warning(f"Cannot extract links because README for '{repo_url}' could not be fetched.")
+        logger.warning(
+            f"Cannot extract links because README for '{repo_url}' could not be fetched."
+        )
         return []
-        
+
     urls = extract_urls_from_markdown(md)
     targets: list[RepoTarget] = []
     for u in urls:
         t = _normalize_github_link(u)
         if t:
             targets.append(t)
-            
+
     # de-dupe by (owner, repo, ref, subpath)
     seen = set()
     out: list[RepoTarget] = []
@@ -370,7 +380,7 @@ def extract_github_repo_links_from_readme(repo_url: str) -> list[RepoTarget]:
             continue
         seen.add(key)
         out.append(t)
-        
+
     logger.info(f"Found {len(out)} unique GitHub repository targets in the README.")
     return out
 
@@ -440,7 +450,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         md = fetch_readme_markdown(args.repo)
     except ValueError:
         # The error is already logged inside the function, but we add context here.
-        logger.critical(f"A fatal error occurred while parsing the input repository: '{args.repo}'. Please check the format.")
+        logger.critical(
+            f"A fatal error occurred while parsing the input repository: '{args.repo}'. Please check the format."
+        )
         # The original code would print the traceback and exit, so we return a non-zero exit code.
         return 1
 

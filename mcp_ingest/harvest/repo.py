@@ -39,6 +39,7 @@ from ..emit.index import write_index
 from ..sdk import autoinstall as sdk_autoinstall
 from ..sdk import describe as sdk_describe
 from ..utils.fetch import LocalSource, prepare_source
+from ..emit.enrich import enrich_manifest
 
 # Optional publisher; imported lazily when used
 try:  # pragma: no cover (optional dep path at runtime)
@@ -197,6 +198,60 @@ def harvest_repo(
                 )
                 mpath = Path(dres["manifest_path"]).resolve()
                 manifests.append(mpath)
+
+                # --- NEW: compute enrichment context ---
+                git_origin = None
+                homepage = None
+                git_ref = local.sha or None
+
+                if local.kind == "git":
+                    # normalize to https://github.com/.../.git if possible
+                    git_origin = local.origin
+                    if (
+                        git_origin
+                        and not git_origin.endswith(".git")
+                        and git_origin.startswith("https://github.com/")
+                    ):
+                        git_origin = git_origin + ".git"
+                    homepage = (
+                        git_origin[:-4]
+                        if git_origin and git_origin.endswith(".git")
+                        else local.origin
+                    )
+                elif local.kind == "zip":
+                    # If origin is a GitHub codeload zip URL, homepage may be the repo page (best-effort)
+                    homepage = local.origin  # harmless; enrich() will keep it or empty string
+
+                # Find a server.py to link in resources (optional best-effort)
+                server_relpath = None
+                server_file = None
+                candidate_server = cdir / "server.py"
+                if candidate_server.exists():
+                    server_file = candidate_server
+                else:
+                    # small search inside candidate dir
+                    for py in cdir.rglob("server.py"):
+                        server_file = py
+                        break
+
+                if server_file is not None:
+                    try:
+                        server_relpath = str(
+                            server_file.resolve().relative_to(local.path.resolve()).as_posix()
+                        )
+                    except Exception:
+                        server_relpath = None
+
+                # --- NEW: enrich in place ---
+                enrich_manifest(
+                    mpath,
+                    homepage=homepage,
+                    git_origin=git_origin,
+                    git_ref=git_ref,
+                    server_relpath_from_repo_root=server_relpath,
+                    repo_root=local.path,
+                )
+
                 log.info("wrote manifest: %s", mpath)
             except Exception as e:  # continue on per-candidate errors
                 log.warning("candidate failed: %s (%s)", cdir, e)

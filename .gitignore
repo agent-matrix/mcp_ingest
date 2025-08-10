@@ -85,3 +85,4 @@ yarn-error.log*
 dist/**
 /tests/backup
 * copy.*
+* copy *.*
