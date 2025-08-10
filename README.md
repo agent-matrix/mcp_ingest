@@ -1,16 +1,17 @@
+# 🦾 MCP Ingest
 
-
-<h1 align="center">MCP Ingest: Discover, Describe, and Register AI Agents</h1>
+*Discover, describe, and register AI agents with ease.*
 
 <p align="center">
   <a href="https://pypi.org/project/mcp-ingest/"><img src="https://img.shields.io/pypi/v/mcp-ingest?color=blue" alt="PyPI"></a>
   <a href="https://pypi.org/project/mcp-ingest/"><img src="https://img.shields.io/pypi/pyversions/mcp-ingest.svg?logo=python" alt="Python Versions"></a>
-  <a href="https://github.com/your-org/mcp-ingest/actions"><img src="https://github.com/your-org/mcp-ingest/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://github.com/your-org/mcp-ingest/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue" alt="License: Apache-2.0"></a>
+  <a href="https://github.com/agent-matrix/mcp_ingest/actions/workflows/ci.yml">
+    <img src="https://github.com/agent-matrix/mcp_ingest/actions/workflows/ci.yml/badge.svg?branch=master" alt="CI">
+  </a>
+  <a href="https://agent-matrix.github.io/matrix-hub/"><img src="https://img.shields.io/static/v1?label=docs&message=mkdocs&color=blue&logo=mkdocs" alt="Docs"></a>
+  <a href="https://github.com/agent-matrix/mcp_ingest/blob/master/LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue" alt="License: Apache-2.0"></a>
   <a href="https://github.com/ruslanmv/agent-generator"><img src="https://img.shields.io/badge/Powered%20by-agent--generator-brightgreen" alt="Powered by agent-generator"></a>
 </p>
-
----
 
 
 ---
