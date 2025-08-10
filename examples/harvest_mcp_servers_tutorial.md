@@ -44,9 +44,25 @@ Harvesting means: **download → scan → detect → emit manifest(s) → write 
 # Create an output folder for artifacts
 mkdir -p dist/servers
 
+First extract 
+mcp-ingest extract  https://github.com/modelcontextprotocol/servers 
+Found N possible servers
+server1 https://github.com/viragtripathi/cockroachdb-mcp-server
+
+server2
+..
+serevern  https://github.com/yuna0x0/hackmd-mcp
+
+
+and then ask if we want to proceed with all found servers 
+
+
+and begins the loop 
+
+
 # Harvest directly from the ZIP of the default branch
 mcp-ingest harvest-repo \
-  https://github.com/modelcontextprotocol/servers/archive/refs/heads/main.zip \
+  server 1 \
   --out dist/servers
 ```
 

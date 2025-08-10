@@ -1,4 +1,4 @@
-# Harvest README‑Linked MCP Servers (and Register to MatrixHub)
+# Harvest MCP Servers
 
 This tutorial walks you through extracting links from a repository’s **README**, harvesting and describing **every MCP server** found (both inside the repo and **externally linked** from the README), and optionally **registering** them to MatrixHub.
 

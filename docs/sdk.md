@@ -7,7 +7,7 @@ Builds `manifest.json` and `index.json` without running the server. SSE URLs are
 ```python
 from mcp_ingest import describe
 paths = describe(name="my-mcp", url="http://127.0.0.1:6288/sse")
-````
+```
 
 ## `autoinstall(...)`
 

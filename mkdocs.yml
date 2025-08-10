@@ -22,7 +22,7 @@ nav:
   - Home: index.md
   - Quickstart: quickstart.md
   - Tutorials:
-      - Harvest README-linked servers: tutorials/harvest-source.md
+      - Harvest: tutorials/harvest-source.md
   - API: api.md
   - CLI: cli.md
   - SDK: sdk.md

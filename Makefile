@@ -57,8 +57,12 @@ typecheck: ## Static type checking with mypy
 	if [ -z "$$dirs" ]; then echo "No source directories to typecheck."; else \
 		$(MYPY) $$dirs; fi
 
-test: ## Run tests (pytest)
-	@if [ -d tests ]; then $(PYTEST) -q; else echo "No tests/ folder; skipping pytest."; fi
+test: ## Run tests with verbosity (pytest -sv)
+	@if [ -d tests ]; then \
+		PYTHONWARNINGS=default PYTHONLOGLEVEL=DEBUG $(PYTEST) -sv; \
+	else \
+		echo "No tests/ folder; skipping pytest."; \
+	fi
 
 ci: ## Lint + typecheck + tests (for CI)
 	@dirs="$(EXISTING_DIRS)"; \
@@ -107,9 +111,9 @@ run-harvester: ## Run the Harvester API locally on :8088
 	$(UVICORN) services.harvester.app:app --reload --port 8088
 
 #harvest-mcp-servers: ## Demo: harvest the MCP servers monorepo ZIP to ./dist/servers
-#	$(BIN)/mcp-ingest harvest-repo \
-#	  https://github.com/modelcontextprotocol/servers/archive/refs/heads/main.zip \
-#	  --out dist/servers
+# 	$(BIN)/mcp-ingest harvest-repo \
+# 		https://github.com/modelcontextprotocol/servers/archive/refs/heads/main.zip \
+# 		--out dist/servers
 harvest-mcp-servers: ## Harvest README-linked servers to ./dist/servers
 	$(BIN)/mcp-ingest harvest-source https://github.com/modelcontextprotocol/servers --out dist/servers --yes
 

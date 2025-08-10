@@ -10,7 +10,7 @@ mcp-ingest pack            <source> [--out dir] [--register] [--matrixhub URL]
 mcp-ingest harvest-repo    <source> --out DIR [--publish DEST] [--register] [--matrixhub URL]
 mcp-ingest harvest-source  <github-repo-url> --out DIR [--yes] [--max-parallel N]
                            [--only-github] [--register] [--matrixhub URL] [-v|--verbose] [--log-file PATH]
-````
+```
 
 ---
 

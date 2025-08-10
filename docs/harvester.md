@@ -16,7 +16,7 @@ The harvester discovers sources, queues jobs, runs ingest in sandboxes, scores r
   "source": "https://github.com/modelcontextprotocol/servers/archive/refs/heads/main.zip",
   "options": { "timeout": 1200 }
 }
-````
+```
 
 ## Running locally
 

@@ -14,7 +14,7 @@
 pip install mcp-ingest
 # docs site (optional)
 pip install mkdocs mkdocs-material
-````
+```
 
 ## Why MCP Ingest?
 
@@ -34,3 +34,4 @@ flowchart LR
   F -->|S3/Pages| G[CDN index]
   C --> H{Register?}
   H -->|/catalog/install| I[MatrixHub]
+```

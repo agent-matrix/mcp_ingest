@@ -9,7 +9,7 @@
 ```bash
 make setup
 make install
-````
+```
 
 ## Useful targets
 

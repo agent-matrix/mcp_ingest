@@ -8,7 +8,7 @@ mcp-ingest describe <name> <url> [--tools ...] [--resource ...] [--out dir]
 mcp-ingest register --matrixhub URL [--manifest path] [--entity-uid ...] [--target ./]
 mcp-ingest pack     <source> [--out dir] [--register] [--matrixhub URL]
 mcp-ingest harvest-repo <source> --out DIR [--publish DEST] [--register] [--matrixhub URL]
-````
+```
 
 ### Examples
 

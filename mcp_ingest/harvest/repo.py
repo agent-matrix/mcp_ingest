@@ -13,10 +13,14 @@ Given a *source* (local dir | git URL | zip URL), it:
   5) writes a *repo-level* index.json that lists all discovered manifests
   6) optionally publishes artifacts (publishers.static_index) and/or registers to MatrixHub
 
-This module is intentionally side-effect light and safe-by-default:
-- All network/clone/download happens in utils.fetch.prepare_source
-- No code execution; static detectors only (runtime validation is handled elsewhere)
-- Idempotent outputs: reruns update/merge indexes rather than overwrite blindly
+Design notes
+------------
+- Root folder is now considered a candidate **if** it looks like a server dir.
+- Rich DEBUG logs are emitted for discovery and detector decisions.
+- If detectors return no usable signal, we **still emit a minimal manifest**
+  for directories that match our server heuristics (so local examples work
+  without deep framework cues).
+- We always write a repo-level index.json (even if empty) to aid debugging.
 
 Compatibility: MatrixHub /catalog/install (via sdk.autoinstall)
 """
@@ -84,6 +88,14 @@ def harvest_repo(
         Required when register=True; MatrixHub base URL
     """
 
+    log.info(
+        "harvest_repo: source=%s out_dir=%s register=%s publish=%s",
+        source,
+        out_dir,
+        register,
+        bool(publish),
+    )
+
     manifests: list[Path] = []
     errors: list[str] = []
     by_detector: dict[str, int] = {"fastmcp": 0, "node": 0, "langchain": 0, "raw": 0}
@@ -92,43 +104,76 @@ def harvest_repo(
     # 1) Prepare local working copy
     try:
         local: LocalSource = prepare_source(source)
+        log.debug(
+            "prepared source: kind=%s path=%s repo=%s sha=%s",
+            local.kind,
+            local.path,
+            local.repo_name,
+            local.sha,
+        )
     except Exception as e:  # pragma: no cover - network/OS dependent
+        log.error("prepare_source failed for %s: %s", source, e)
         raise RuntimeError(f"prepare_source failed for {source}: {e}") from e
 
     try:
-        # 2) Find candidate subfolders
+        # 2) Find candidate subfolders (include root if it looks like a server)
         candidates = list(_iter_candidate_dirs(local.path))
         if not candidates:
-            log.info("No candidates found under %s", local.path)
+            msg = f"No server-like candidates found under {local.path}"
+            log.warning(msg)
+            errors.append(msg)
 
         # 3) Prepare output root
         out_root = Path(out_dir).expanduser().resolve()
         out_root.mkdir(parents=True, exist_ok=True)
+        log.debug("output root: %s", out_root)
 
         # 4) Process candidates
         for cdir in candidates:
+            log.info("candidate: %s", cdir)
             try:
                 report, detector_tag = _run_detectors_in_order(cdir)
-                if not report or (
-                    not report.tools and not report.server_url and not report.resources
-                ):
-                    errors.append(f"no signal from detectors: {cdir}")
-                    continue
+                log.debug(
+                    "detector result: dir=%s detector=%s conf=%.2f tools=%s url=%s",
+                    cdir,
+                    detector_tag,
+                    (report.confidence or 0.0) if hasattr(report, "confidence") else 0.0,
+                    len(report.tools or []) if hasattr(report, "tools") and report.tools else 0,
+                    getattr(report, "server_url", ""),
+                )
 
-                by_detector[detector_tag] = by_detector.get(detector_tag, 0) + 1
+                use_minimal = not _has_signal(report)
+                if use_minimal:
+                    log.warning("no detector signal for %s — emitting minimal manifest", cdir)
+                else:
+                    by_detector[detector_tag] = by_detector.get(detector_tag, 0) + 1
 
                 # Name & URL synthesis
-                name = report.suggest_name(default=cdir.name)
-                url = report.server_url or _default_url()
+                name = (
+                    report.suggest_name(default=cdir.name)
+                    if hasattr(report, "suggest_name")
+                    else cdir.name
+                ) or cdir.name
+                url = getattr(report, "server_url", None) or _default_url()
                 ttag = _transport_tag(url)
                 transports[ttag] = transports.get(ttag, 0) + 1
 
                 # Tools list for describe() (keep simple: names/ids)
-                tools = [t.get("name") or t.get("id") for t in (report.tools or [])]
-                tools = [t for t in tools if t]
+                tools = []
+                if hasattr(report, "tools") and report.tools:
+                    tools = [
+                        t.get("name") or t.get("id") for t in report.tools if isinstance(t, dict)
+                    ]
+                    tools = [t for t in tools if t]
 
-                # Resources passthrough (best-effort)
-                resources = report.resources or []
+                # Resources passthrough (best-effort); add a hint file if we emit minimal
+                resources = list(getattr(report, "resources", []) or [])
+                if use_minimal:
+                    hint = _first_existing(
+                        cdir / "server.py", cdir / "app.py", cdir / "main.py", cdir / "package.json"
+                    )
+                    if hint is not None:
+                        resources.append({"uri": f"file://{hint}", "name": hint.name})
 
                 # Per-server output dir: make a stable slug
                 rel_slug = _slug_from_repo_and_path(local, cdir)
@@ -141,12 +186,18 @@ def harvest_repo(
                     url=url,
                     tools=tools or None,
                     resources=resources or None,
-                    description=report.summarize_description() or "",
+                    description=(
+                        report.summarize_description()
+                        if hasattr(report, "summarize_description")
+                        else ""
+                    )
+                    or "",
                     version="0.1.0",
                     out_dir=srv_out,
                 )
                 mpath = Path(dres["manifest_path"]).resolve()
                 manifests.append(mpath)
+                log.info("wrote manifest: %s", mpath)
             except Exception as e:  # continue on per-candidate errors
                 log.warning("candidate failed: %s (%s)", cdir, e)
                 errors.append(f"{cdir}: {e}")
@@ -159,11 +210,14 @@ def harvest_repo(
             for p in manifests
         ]
         write_index(repo_index, rel_manifest_paths, additive=False)
+        log.info("wrote repo index: %s (manifests=%d)", repo_index, len(manifests))
 
         # 7) Optional publish
         if publish:
             if publish_static is None:
-                errors.append("publish requested but publishers.static_index not available")
+                msg = "publish requested but publishers.static_index not available"
+                log.error(msg)
+                errors.append(msg)
             else:
                 try:
                     publish_static(
@@ -173,20 +227,26 @@ def harvest_repo(
                         },
                         publish,
                     )
+                    log.info("publish complete: %s", publish)
                 except Exception as pe:  # pragma: no cover - remote dependent
+                    log.exception("publish error: %s", pe)
                     errors.append(f"publish error: {pe}")
 
         # 8) Optional register (deferred install)
         if register:
             if not matrixhub_url:
-                errors.append("register=True but matrixhub_url not provided")
+                msg = "register=True but matrixhub_url not provided"
+                log.error(msg)
+                errors.append(msg)
             else:
                 for mpath in manifests:
                     try:
                         with open(mpath, encoding="utf-8") as fh:
                             manifest = json.load(fh)
                         sdk_autoinstall(matrixhub_url=matrixhub_url, manifest=manifest)
+                        log.info("registered manifest: %s", mpath.name)
                     except Exception as re:  # pragma: no cover - env dependent
+                        log.exception("register failed for %s: %s", mpath.name, re)
                         errors.append(f"register failed for {mpath.name}: {re}")
 
         summary: dict[str, object] = {
@@ -207,6 +267,7 @@ def harvest_repo(
         # 9) Cleanup temporary workspace if prepare_source created one
         try:
             local.cleanup()
+            log.debug("cleanup complete for %s", local.path)
         except Exception:  # pragma: no cover
             pass
 
@@ -222,15 +283,23 @@ def _iter_candidate_dirs(root: Path) -> Iterable[Path]:
     """Yield likely MCP server folders under *root*.
 
     Heuristics (cheap and safe):
+      - the *root itself* if it looks like a server directory
       - any directory containing server.py/app.py/main.py
       - any directory containing package.json (Node-based MCP)
       - special folders named "servers", "packages", "examples" (scan their children)
     """
     seen: set[Path] = set()
 
-    def add(p: Path) -> None:
+    def add(p: Path, reason: str) -> None:
         if p.is_dir() and p not in seen:
             seen.add(p)
+            log.debug("candidate:add %s (%s)", p, reason)
+
+    # Consider root as candidate
+    if _looks_like_py_server_dir(root):
+        add(root, "root:py-server")
+    elif _has_package_json(root):
+        add(root, "root:package.json")
 
     # 1) direct children heuristic
     for child in root.iterdir():
@@ -238,10 +307,15 @@ def _iter_candidate_dirs(root: Path) -> Iterable[Path]:
             for sub in child.rglob("*"):
                 if not sub.is_dir():
                     continue
-                if _looks_like_py_server_dir(sub) or _has_package_json(sub):
-                    add(sub)
-        elif child.is_dir() and (_looks_like_py_server_dir(child) or _has_package_json(child)):
-            add(child)
+                if _looks_like_py_server_dir(sub):
+                    add(sub, "rglob:py-server")
+                elif _has_package_json(sub):
+                    add(sub, "rglob:package.json")
+        elif child.is_dir():
+            if _looks_like_py_server_dir(child):
+                add(child, "child:py-server")
+            elif _has_package_json(child):
+                add(child, "child:package.json")
 
     # 2) fallback: scan up to a limited depth for server.py/package.json
     # Depth guard to avoid pathological repos
@@ -251,8 +325,10 @@ def _iter_candidate_dirs(root: Path) -> Iterable[Path]:
             continue
         if _depth(root, sub) > max_depth:
             continue
-        if _looks_like_py_server_dir(sub) or _has_package_json(sub):
-            add(sub)
+        if _looks_like_py_server_dir(sub):
+            add(sub, "fallback:py-server")
+        elif _has_package_json(sub):
+            add(sub, "fallback:package.json")
 
     # Prefer stable order
     return sorted(seen, key=lambda p: str(p))
@@ -296,17 +372,17 @@ def _run_detectors_in_order(cdir: Path) -> tuple[DetectReport, str]:
     """Run detectors in priority order and return (report, detector_tag)."""
     # 1) FastMCP
     rep = detect_fastmcp(str(cdir))
-    if _good(rep):
+    if _has_signal(rep):
         return rep, "fastmcp"
 
     # 2) Node MCP (inline heuristic)
     rep = _detect_node_mcp(str(cdir))
-    if _good(rep):
+    if _has_signal(rep):
         return rep, "node"
 
     # 3) LangChain
     rep = detect_langchain(str(cdir))
-    if _good(rep):
+    if _has_signal(rep):
         return rep, "langchain"
 
     # 4) Raw fallback
@@ -314,10 +390,16 @@ def _run_detectors_in_order(cdir: Path) -> tuple[DetectReport, str]:
     return rep, "raw"
 
 
-def _good(rep: DetectReport) -> bool:
-    return bool(
-        rep and (rep.tools or rep.server_url or rep.resources) and (rep.confidence or 0) >= 0.5
+def _has_signal(rep: DetectReport | None) -> bool:
+    if not rep:
+        return False
+    conf = getattr(rep, "confidence", 0.0) or 0.0
+    has_bits = bool(
+        getattr(rep, "tools", None)
+        or getattr(rep, "server_url", None)
+        or getattr(rep, "resources", None)
     )
+    return has_bits and conf >= 0.5
 
 
 # Minimal Node MCP heuristic (kept local to avoid a whole new module for MVP)
@@ -410,3 +492,13 @@ def _slug_from_repo_and_path(local: LocalSource, cdir: Path) -> str:
         rel = cdir.as_posix()
     safe = rel.strip("/").replace("/", "__").replace(" ", "-")
     return f"{repo}__{safe}" if safe else repo
+
+
+def _first_existing(*candidates: Path) -> Path | None:
+    for c in candidates:
+        try:
+            if c.exists():
+                return c
+        except Exception:
+            continue
+    return None
