@@ -1,4 +1,3 @@
-# mcp_ingest/utils/fetch.py
 from __future__ import annotations
 
 """
@@ -22,6 +21,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import typing as _t
 import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -58,7 +58,6 @@ class LocalSource:
 # Public API
 # ----------------------------
 
-
 def prepare_source(source: str, *, workdir: str | Path | None = None) -> LocalSource:
     """
     Prepare a local working copy of a source (dir | git | zip).
@@ -74,7 +73,13 @@ def prepare_source(source: str, *, workdir: str | Path | None = None) -> LocalSo
     if not src:
         raise FetchError("empty source")
 
-    kind, ref = _classify_source(src)
+    # NOTE: _classify_source may return (kind, ref) OR (kind, ref, normalized_src)
+    classified = _classify_source(src)
+    if isinstance(classified, tuple) and len(classified) == 3:
+        kind, ref, normalized = classified
+        src = normalized
+    else:
+        kind, ref = classified  # type: ignore[misc]
 
     # Ensure base working directory
     base = Path(workdir).expanduser().resolve() if workdir else None
@@ -93,21 +98,46 @@ def prepare_source(source: str, *, workdir: str | Path | None = None) -> LocalSo
 # Classification
 # ----------------------------
 
-_GIT_RE = re.compile(r"(?i)\.git(?:@(?P<ref>[\w\.\-/]+))?$")
-_SCP_GIT_RE = re.compile(r"^[\w\-]+@[\w\.\-]+:.*\.git(?:@(?P<ref>[\w\.\-/]+))?$")
+_GIT_RE = re.compile(r"(?i)\.git(?:@(?P<ref>[\w\.-/]+))?$")
+_SCP_GIT_RE = re.compile(r"^[\w\-]+@[\w\.-]+:.*\.git(?:@(?P<ref>[\w\.-/]+))?$")
 _ZIP_RE = re.compile(r"(?i)\.zip$")
 
+# Recognize GitHub HTTPS repo URLs, optionally /tree/<ref>[/<subpath>]
+_GH_RE = re.compile(
+    r"^https?://github\.com/"
+    r"(?P<owner>[^/]+)/(?P<repo>[^/]+)"
+    r"(?:/)?(?:tree/(?P<ref>[^/]+)(?:/(?P<subpath>.*))?)?$",
+    re.IGNORECASE,
+)
 
-def _classify_source(source: str) -> tuple[Literal["dir", "git", "zip"], str | None]:
-    """Return (kind, ref). Ref may be branch/tag/sha for git sources."""
-    # file:// scheme?
+
+def _normalize_github_http_to_git(src: str) -> tuple[str, str | None] | None:
+    """
+    If src is a GitHub HTTPS repo URL, return (normalized_git_url, ref).
+    Examples:
+      https://github.com/owner/repo           -> (https://github.com/owner/repo.git, None)
+      https://github.com/owner/repo/tree/main -> (https://github.com/owner/repo.git, "main")
+    """
+    m = _GH_RE.match(src)
+    if not m:
+        return None
+    owner, repo, ref = m.group("owner"), m.group("repo"), m.group("ref")
+    if repo.endswith(".git"):
+        repo = repo[:-4]
+    return f"https://github.com/{owner}/{repo}.git", ref
+
+
+def _classify_source(
+    source: str,
+) -> _t.Union[tuple[Literal["dir", "git", "zip"], str | None], tuple[Literal["git"], str | None, str]]:
+    """Return (kind, ref) OR (kind, ref, normalized_src). Ref may be branch/tag/sha for git."""
     parsed = urlparse(source)
 
     # ZIP (http/https/file) by suffix
     if parsed.scheme in {"http", "https", "file"} and _ZIP_RE.search(parsed.path or ""):
         return "zip", None
 
-    # GIT scp-style or https git
+    # GIT scp-style or explicit .git
     if _SCP_GIT_RE.match(source):
         ref = _extract_ref(source)
         return "git", ref
@@ -117,10 +147,16 @@ def _classify_source(source: str) -> tuple[Literal["dir", "git", "zip"], str | N
         or source.endswith(".git")
         or ".git@" in source
     ):
-        # Accept https git URLs (with or without @ref)
         if ".git" in source:
             ref = _extract_ref(source)
             return "git", ref
+
+    # GitHub HTTPS repo URLs without .git (and optional /tree/<ref>)
+    if parsed.scheme in {"http", "https"} and parsed.netloc.lower() == "github.com":
+        norm = _normalize_github_http_to_git(source)
+        if norm:
+            git_url, ref = norm
+            return "git", ref, git_url
 
     # Otherwise treat as directory
     return "dir", None
@@ -142,7 +178,6 @@ def _extract_ref(source: str) -> str | None:
 # ----------------------------
 # ZIP handling
 # ----------------------------
-
 
 def _prepare_from_zip(url_or_file: str, base: Path | None) -> LocalSource:
     # Create temp workspace
@@ -295,7 +330,6 @@ def _strip_singleton_dir(extracted_root: Path) -> Path:
 # Git handling
 # ----------------------------
 
-
 def _prepare_from_git(url: str, ref: str | None, base: Path | None) -> LocalSource:
     tmp_root = Path(tempfile.mkdtemp(prefix="mcpgit-")) if base is None else base
     created_tmp = base is None
@@ -316,16 +350,14 @@ def _prepare_from_git(url: str, ref: str | None, base: Path | None) -> LocalSour
     except Exception as e:
         if base is None:
             shutil.rmtree(tmp_root, ignore_errors=True)
-        # FIX: Chain the original exception to preserve its traceback
+        # Chain the original exception to preserve its traceback
         raise _as_fetch_error(e, f"failed to prepare git repo: {url}") from e
 
 
 def _git_clone(url: str, dest: Path, *, ref: str | None) -> str:
     dest.parent.mkdir(parents=True, exist_ok=True)
-    # If ref provided, we still shallow fetch just that ref when possible.
-    # Fallback: clone --depth=1 and then checkout ref (may fetch additional).
+    # If ref provided, attempt shallow fetch of that ref; otherwise shallow clone
     try:
-        # Try shallow clone of the specific ref when ref is a branch or tag
         if ref:
             # Clone without checkout, then fetch specific ref shallowly
             _run(["git", "init"], cwd=dest)
@@ -346,7 +378,6 @@ def _infer_repo_name(url: str) -> str:
     tail = url.rstrip("/").split("/")[-1]
     if ".git" in tail:
         tail = tail.split(".git", 1)[0]
-    # FIX: Use a standard quote and remove the redundant check.
     if "@" in tail:
         tail = tail.split("@", 1)[0]
     return tail or "repo"
@@ -368,7 +399,6 @@ def _run(cmd, *, cwd: Path | None = None, timeout: int = 600) -> subprocess.Comp
 # Directory handling
 # ----------------------------
 
-
 def _prepare_from_dir(path_str: str) -> LocalSource:
     p = Path(path_str).expanduser().resolve()
     if not p.exists() or not p.is_dir():
@@ -386,7 +416,6 @@ def _prepare_from_dir(path_str: str) -> LocalSource:
 # ----------------------------
 # Helpers
 # ----------------------------
-
 
 def _as_fetch_error(exc: Exception, ctx: str) -> FetchError:
     if isinstance(exc, FetchError):

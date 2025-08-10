@@ -83,3 +83,5 @@ yarn-error.log*
 # ---- Example & demo outputs ---------------------------------------------------
 # Keep example source manifests under examples/, but ignore generated artifacts in dist/
 dist/**
+/tests/backup
+* copy.*

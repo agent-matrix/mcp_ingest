@@ -16,3 +16,15 @@ MCP Ingest integrates primarily via **`POST /catalog/install`** with an inline m
 
 1. Detect → Describe → (optional) Validate/Publish.
 2. **Register** when a tenant wants the tool (runtime costs happen on demand).
+
+
+
+ Ensure Matrix Hub is running and reachable at HUB_URL in your .env (or pass as arg)
+If protected, set API_TOKEN in .env.
+
+# 1) Harvest
+mcp-ingest harvest-repo https://github.com/zazencodes/random-number-mcp --out dist/servers-first
+
+# 2) Register
+chmod +x tests/test_register.sh
+tests/test_register.sh dist/servers-first/index.json  

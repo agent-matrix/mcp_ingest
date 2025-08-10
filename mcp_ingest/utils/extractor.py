@@ -27,6 +27,7 @@ import re
 import sys
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from typing import Tuple
 from urllib.parse import urlparse
 
 import httpx
@@ -75,7 +76,7 @@ class RepoTarget:
 
 
 class GitHubClient:
-    """Very small GitHub HTTP client with optional token support.
+    """Very small GitHub client with optional token support.
 
     Uses `GITHUB_TOKEN` from the environment if present to raise rate limits
     and avoid anonymous throttling.
@@ -88,29 +89,35 @@ class GitHubClient:
         }
         token = os.getenv("GITHUB_TOKEN")
         if token:
+            logger.debug("Using GITHUB_TOKEN for authentication.")
             headers["Authorization"] = f"Bearer {token}"
+        else:
+            logger.debug("No GITHUB_TOKEN found, proceeding with anonymous requests.")
         self.client = client or httpx.Client(headers=headers, timeout=20.0, follow_redirects=True)
 
     def get_json(self, url: str, ok_codes: Sequence[int] = (200,)) -> dict | None:
+        logger.debug(f"Requesting JSON from: {url}")
         try:
             resp = self.client.get(url)
             if resp.status_code not in ok_codes:
-                logger.debug("GET %s -> %s", url, resp.status_code)
+                logger.warning("GET %s -> %s (expected %s)", url, resp.status_code, ok_codes)
+                logger.debug("Response body: %s", resp.text)
                 return None
             return resp.json()
         except Exception as e:  # pragma: no cover - defensive
-            logger.debug("GET %s failed: %s", url, e)
+            logger.error("GET %s failed: %s", url, e, exc_info=True)
             return None
 
     def get_text(self, url: str, ok_codes: Sequence[int] = (200,)) -> str | None:
+        logger.debug(f"Requesting text from: {url}")
         try:
             resp = self.client.get(url)
             if resp.status_code not in ok_codes:
-                logger.debug("GET %s -> %s", url, resp.status_code)
+                logger.debug("GET %s -> %s (expected %s)", url, resp.status_code, ok_codes)
                 return None
             return resp.text
         except Exception as e:  # pragma: no cover - defensive
-            logger.debug("GET %s failed: %s", url, e)
+            logger.error("GET %s failed: %s", url, e, exc_info=True)
             return None
 
     def close(self) -> None:
@@ -152,47 +159,91 @@ def extract_urls_from_markdown(md: str) -> list[str]:
     Returns a de-duplicated list, *not* sorted, preserving first-seen order.
     """
     urls: list[str] = []
+    logger.debug("Starting URL extraction from markdown content.")
     for m in _MD_LINK_URL.finditer(md):
         url = m.group(1) or m.group("angle") or m.group("bare")
         if not url:
             continue
         # Trim common trailing punctuation from bare links
+        original_url = url
         while url and url[-1] in _TRAILING_PUNCT:
             url = url[:-1]
+        if original_url != url:
+            logger.debug(f"Trimmed trailing punctuation from '{original_url}' -> '{url}'")
         urls.append(url)
-    return _dedupe_preserve_order(urls)
+    
+    deduped_urls = _dedupe_preserve_order(urls)
+    logger.info(f"Extracted {len(deduped_urls)} unique URLs from markdown.")
+    return deduped_urls
 
 
 # --- README discovery -----------------------------------------------------
 
+def _parse_github_repo_url(repo_url: str) -> Tuple[str, str]:
+    """Return (owner, repo) from a GitHub repository identifier or URL.
 
-def _parse_github_repo_url(repo_url: str) -> tuple[str, str]:
-    """Return (owner, repo) from a GitHub repository URL.
-
-    Supports:
+    Accepts:
       - https://github.com/owner/repo
-      - https://github.com/owner/repo/
-      - git@github.com:owner/repo.git (converted to https-like for parsing)
+      - github.com/owner/repo
+      - owner/repo
+      - git@github.com:owner/repo.git
+      - with/without .git and trailing slash
     """
-    if repo_url.startswith("git@github.com:"):
-        repo_url = repo_url.replace("git@github.com:", "https://github.com/")
-    parsed = urlparse(repo_url)
-    if parsed.netloc != "github.com":
-        raise ValueError("Only github.com URLs are supported in this helper")
+    logger.debug(f"Attempting to parse GitHub repo URL: '{repo_url}'")
+    s = (repo_url or "").strip()
+
+    # SSH form → normalize to https
+    if s.startswith("git@github.com:"):
+        s_before = s
+        s = s.replace("git@github.com:", "https://github.com/")
+        logger.debug(f"Normalized SSH form '{s_before}' to '{s}'")
+
+    # If it starts with 'github.com/', add scheme
+    if s.lower().startswith("github.com/"):
+        s_before = s
+        s = "https://" + s
+        logger.debug(f"Added scheme to '{s_before}' -> '{s}'")
+
+    # If it's just 'owner/repo', expand to https://github.com/owner/repo
+    if "://" not in s and s.count("/") == 1 and not s.endswith("/"):
+        owner, repo = s.split("/", 1)
+        if owner and repo:
+            logger.debug(f"Recognized short form '{s}' as owner='{owner}', repo='{repo}'")
+            return owner, repo
+
+    logger.debug(f"Parsing '{s}' as a standard URL.")
+    parsed = urlparse(s)
+    logger.debug(f"Parsed URL: netloc='{parsed.netloc}', path='{parsed.path}'")
+    if parsed.netloc.lower() != "github.com":
+        logger.error(f"URL netloc is '{parsed.netloc}', but expected 'github.com'.")
+        raise ValueError("Only github.com URLs (or owner/repo short form) are supported in this helper")
+
     parts = [p for p in parsed.path.split("/") if p]
     if len(parts) < 2:
-        raise ValueError("Expected a GitHub repo URL like https://github.com/owner/repo")
+        logger.error(f"URL path '{parsed.path}' does not contain owner/repo components.")
+        raise ValueError("Expected a GitHub repo like https://github.com/owner/repo or owner/repo")
+
     owner, repo = parts[0], parts[1]
     if repo.endswith(".git"):
         repo = repo[:-4]
+        logger.debug(f"Removed '.git' suffix from repo name -> '{repo}'")
+        
+    logger.debug(f"Successfully parsed owner='{owner}', repo='{repo}'")
     return owner, repo
 
 
 def _default_branch(client: GitHubClient, owner: str, repo: str) -> str | None:
+    logger.debug(f"Fetching repository details for {owner}/{repo} to find default branch.")
     data = client.get_json(f"{_GITHUB_API}/repos/{owner}/{repo}")
     if not data:
+        logger.warning(f"Failed to fetch repo details for {owner}/{repo}.")
         return None
-    return data.get("default_branch")
+    branch = data.get("default_branch")
+    if branch:
+        logger.info(f"Found default branch for {owner}/{repo}: '{branch}'")
+    else:
+        logger.warning(f"Could not determine default branch for {owner}/{repo} from API response.")
+    return branch
 
 
 def _try_fetch_readme(client: GitHubClient, owner: str, repo: str, branch: str) -> str | None:
@@ -207,11 +258,13 @@ def _try_fetch_readme(client: GitHubClient, owner: str, repo: str, branch: str) 
         "docs/README.md",
         "docs/readme.md",
     ]
+    logger.debug(f"Searching for README in {owner}/{repo} on branch '{branch}'")
     for path in candidates:
         raw_url = f"{_RAW_BASE}/{owner}/{repo}/{branch}/{path}"
+        logger.debug(f"Trying to fetch README candidate: {raw_url}")
         txt = client.get_text(raw_url)
-        if txt:
-            logger.debug("Fetched %s", raw_url)
+        if txt is not None:
+            logger.info("Fetched README from %s", raw_url)
             return txt
     return None
 
@@ -222,7 +275,14 @@ def fetch_readme_markdown(repo_url: str) -> str | None:
     Tries the repository's default branch (via GitHub API), then falls back to
     common branches (main, master).
     """
-    owner, repo = _parse_github_repo_url(repo_url)
+    logger.info(f"Fetching README for repository: {repo_url}")
+    try:
+        owner, repo = _parse_github_repo_url(repo_url)
+    except ValueError as e:
+        logger.error(f"Could not parse repository URL '{repo_url}': {e}", exc_info=True)
+        # Re-raise the exception to match original behavior
+        raise
+
     client = GitHubClient()
     try:
         branches: list[str] = []
@@ -233,12 +293,14 @@ def fetch_readme_markdown(repo_url: str) -> str | None:
         for b in ("main", "master"):
             if b not in branches:
                 branches.append(b)
+        
+        logger.debug(f"Will search for README on branches in this order: {branches}")
 
         for branch in branches:
             md = _try_fetch_readme(client, owner, repo, branch)
             if md:
                 return md
-        logger.info("Could not find a README in %s/%s on %s", owner, repo, branches)
+        logger.warning("Could not find a README in %s/%s on any of the tried branches: %s", owner, repo, branches)
         return None
     finally:
         client.close()
@@ -257,17 +319,28 @@ def _normalize_github_link(url: str) -> RepoTarget | None:
       - https://github.com/owner/repo/tree/<ref>/<path/to/subdir>
     """
     parsed = urlparse(url)
-    if parsed.netloc != "github.com":
+    if parsed.netloc.lower() != "github.com":
         return None
+        
     parts = [p for p in parsed.path.split("/") if p]
     if len(parts) < 2:
         return None
+        
     owner, repo = parts[0], parts[1]
-    if len(parts) >= 3 and parts[2] == "tree" and len(parts) >= 4:
+    
+    if len(parts) >= 4 and parts[2] == "tree":
         ref = parts[3]
         subpath = "/".join(parts[4:]) if len(parts) >= 5 else None
-        return RepoTarget(owner, repo, ref=ref, subpath=subpath or None)
-    return RepoTarget(owner, repo)
+        target = RepoTarget(owner, repo, ref=ref, subpath=subpath or None)
+        logger.debug(f"Normalized '{url}' to RepoTarget with subpath: {target}")
+        return target
+        
+    if len(parts) == 2:
+        target = RepoTarget(owner, repo)
+        logger.debug(f"Normalized '{url}' to base RepoTarget: {target}")
+        return target
+        
+    return None
 
 
 def extract_github_repo_links_from_readme(repo_url: str) -> list[RepoTarget]:
@@ -278,13 +351,16 @@ def extract_github_repo_links_from_readme(repo_url: str) -> list[RepoTarget]:
     """
     md = fetch_readme_markdown(repo_url)
     if not md:
+        logger.warning(f"Cannot extract links because README for '{repo_url}' could not be fetched.")
         return []
+        
     urls = extract_urls_from_markdown(md)
     targets: list[RepoTarget] = []
     for u in urls:
         t = _normalize_github_link(u)
         if t:
             targets.append(t)
+            
     # de-dupe by (owner, repo, ref, subpath)
     seen = set()
     out: list[RepoTarget] = []
@@ -294,6 +370,8 @@ def extract_github_repo_links_from_readme(repo_url: str) -> list[RepoTarget]:
             continue
         seen.add(key)
         out.append(t)
+        
+    logger.info(f"Found {len(out)} unique GitHub repository targets in the README.")
     return out
 
 
@@ -314,14 +392,15 @@ def configure_logging(verbosity: int, log_file: str | None = None) -> None:
     elif verbosity >= 2:
         level = logging.DEBUG
 
-    fmt = "%(asctime)s %(levelname)s %(name)s: %(message)s"
+    fmt = "%(asctime)s %(levelname)-8s %(name)s: %(message)s"
     datefmt = "%Y-%m-%d %H:%M:%S"
 
-    handlers: list[logging.Handler] = [logging.StreamHandler()]
+    handlers: list[logging.Handler] = [logging.StreamHandler(sys.stderr)]
     if log_file:
         handlers.append(logging.FileHandler(log_file))
 
-    logging.basicConfig(level=level, format=fmt, datefmt=datefmt, handlers=handlers)
+    # Use force=True to allow re-configuration in tests or interactive sessions
+    logging.basicConfig(level=level, format=fmt, datefmt=datefmt, handlers=handlers, force=True)
     logger.debug("Logging configured (level=%s, file=%s)", logging.getLevelName(level), log_file)
 
 
@@ -336,7 +415,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument(
         "repo",
-        help="GitHub repository URL (e.g., https://github.com/modelcontextprotocol/servers)",
+        help="GitHub repository URL (e.g., https://github.com/modelcontextprotocol/servers) or short form (owner/repo)",
     )
     parser.add_argument("--no-sort", dest="sort", action="store_false", help="Do not sort output")
     parser.add_argument(
@@ -345,15 +424,28 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--log-file", help="Optional path to write debug logs as well", default=None
     )
+    parser.add_argument(
+        "--list-candidates-only",
+        action="store_true",
+        help="Only print the final list of candidate repo URLs and exit.",
+    )
 
     args = parser.parse_args(argv)
     configure_logging(args.verbose, args.log_file)
 
     logger.info("Starting README URL extraction for %s", args.repo)
 
-    md = fetch_readme_markdown(args.repo)
+    try:
+        # NOTE: The traceback shows the error happens in this function call
+        md = fetch_readme_markdown(args.repo)
+    except ValueError:
+        # The error is already logged inside the function, but we add context here.
+        logger.critical(f"A fatal error occurred while parsing the input repository: '{args.repo}'. Please check the format.")
+        # The original code would print the traceback and exit, so we return a non-zero exit code.
+        return 1
+
     if not md:
-        print("Could not fetch a README for the provided repository.")
+        print("Could not fetch a README for the provided repository.", file=sys.stderr)
         return 1
 
     all_urls = extract_urls_from_markdown(md)
@@ -367,15 +459,42 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(url)
 
     # Also show the GitHub repo candidates (useful context while testing)
-    candidates = extract_github_repo_links_from_readme(args.repo)
-    if candidates:
-        print("\nGitHub repository candidates:\n")
-        for line in format_targets_as_lines(candidates, sort=args.sort):
-            print(line)
+    # Re-running this is inefficient but matches the original structure.
+    # We add a try-except block here as well for safety, though it should have failed above if it was going to.
+    try:
+        # 1. First, get the list of candidates
+        candidates = extract_github_repo_links_from_readme(args.repo)
+
+        # --- ADD THIS ENTIRE LOGIC BLOCK HERE ---
+        # 2. Check if we are in "data-only" mode. If so, print the data and exit.
+        if args.list_candidates_only:
+            if candidates:
+                # Loop through the results and print ONLY the clean URLs
+                for line in format_targets_as_lines(candidates, sort=args.sort):
+                    print(line)
+            # Exit successfully right after printing the list
+            return 0
+        # --- END OF NEW LOGIC BLOCK ---
+
+        # 3. If not in "data-only" mode, proceed with the normal interactive output.
+
+        if candidates:
+            print("\nGitHub repository candidates:\n")
+            for line in format_targets_as_lines(candidates, sort=args.sort):
+                print(line)
+    except ValueError:
+        # This case is unlikely if the first call succeeded, but it's good practice.
+        logger.error("Failed to extract GitHub repo links on the second pass.")
+        # We can continue since the main URL list was already printed.
 
     # Test-mode confirmation prompt
     try:
         print("\nWould you like to proceed to analyze each of them? [y/N]: ", end="", flush=True)
+        # Check if stdin is a tty, otherwise skip the prompt (for non-interactive use)
+        if not sys.stdin.isatty():
+            print("Non-interactive mode detected, skipping analysis.")
+            logger.info("Non-interactive session; skipping user prompt.")
+            return 0
         choice = sys.stdin.readline().strip().lower()
     except KeyboardInterrupt:  # pragma: no cover - UX nicety
         print("\nAborted.")
