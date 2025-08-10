@@ -1,22 +1,26 @@
 from __future__ import annotations
-from typing import List, Optional
 
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import desc
 
-from ..store.models import get_session, CatalogEntry
+from ..store.models import CatalogEntry, get_session
 
 router = APIRouter(prefix="/catalogs", tags=["catalogs"])
+
 
 @router.get("")
 def list_catalogs(
     min_score: float = Query(0.0, ge=0.0, le=1.0),
-    framework: Optional[str] = None,
+    framework: str | None = None,
     limit: int = Query(50, ge=1, le=500),
 ):
     db = get_session()
     try:
-        q = db.query(CatalogEntry).filter(CatalogEntry.score >= min_score).order_by(desc(CatalogEntry.last_seen))
+        q = (
+            db.query(CatalogEntry)
+            .filter(CatalogEntry.score >= min_score)
+            .order_by(desc(CatalogEntry.last_seen))
+        )
         if framework:
             q = q.filter(CatalogEntry.frameworks.contains(framework))
         rows = q.limit(limit).all()
@@ -34,6 +38,7 @@ def list_catalogs(
         ]
     finally:
         db.close()
+
 
 @router.get("/{entry_id}")
 def get_catalog_entry(entry_id: int):

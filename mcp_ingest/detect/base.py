@@ -1,18 +1,19 @@
-
 from __future__ import annotations
+
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
+
 
 @dataclass
 class DetectReport:
-    tools: List[Dict[str, Any]] = field(default_factory=list)
-    resources: List[Dict[str, Any]] = field(default_factory=list)
-    prompts: List[Dict[str, Any]] = field(default_factory=list)
-    server_url: Optional[str] = None
+    tools: list[dict[str, Any]] = field(default_factory=list)
+    resources: list[dict[str, Any]] = field(default_factory=list)
+    prompts: list[dict[str, Any]] = field(default_factory=list)
+    server_url: str | None = None
     confidence: float = 0.0
-    notes: List[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "tools": self.tools,
             "resources": self.resources,
@@ -53,4 +54,3 @@ def merge_reports(*reports: DetectReport) -> DetectReport:
             out.server_url = r.server_url
         out.confidence = max(out.confidence, r.confidence)
     return out
-

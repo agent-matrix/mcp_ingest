@@ -1,11 +1,10 @@
-
 from __future__ import annotations
+
 import ast
 from pathlib import Path
-from typing import Dict, List, Optional
 
-from .base import DetectReport
 from ..utils.jsonschema import infer_schema_from_ast_func
+from .base import DetectReport
 
 __all__ = ["detect_path"]
 
@@ -16,7 +15,7 @@ _AG_IMPORT_HINTS = (
 _AGENT_CLASSES = {"AssistantAgent", "UserProxyAgent", "GroupChat", "GroupChatManager"}
 
 
-def _walk_py(root: Path) -> List[Path]:
+def _walk_py(root: Path) -> list[Path]:
     if root.is_file() and root.suffix == ".py":
         return [root]
     return [p for p in root.rglob("*.py") if p.is_file()]
@@ -30,8 +29,8 @@ def _call_name(node: ast.AST) -> str:
     return ""
 
 
-def _collect_functions(tree: ast.AST) -> Dict[str, ast.FunctionDef]:
-    out: Dict[str, ast.FunctionDef] = {}
+def _collect_functions(tree: ast.AST) -> dict[str, ast.FunctionDef]:
+    out: dict[str, ast.FunctionDef] = {}
     for n in ast.walk(tree):
         if isinstance(n, ast.FunctionDef):
             out[n.name] = n
@@ -75,10 +74,14 @@ def detect_path(source: str) -> DetectReport:
         for node in ast.walk(tree):
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
                 if node.func.attr in {"register_function", "register_tool"}:
-                    tname: Optional[str] = None
-                    fn_name: Optional[str] = None
+                    tname: str | None = None
+                    fn_name: str | None = None
                     for kw in getattr(node, "keywords", []) or []:
-                        if kw.arg in {"name", "tool_name"} and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                        if (
+                            kw.arg in {"name", "tool_name"}
+                            and isinstance(kw.value, ast.Constant)
+                            and isinstance(kw.value.value, str)
+                        ):
                             tname = kw.value.value
                         if kw.arg in {"fn", "func"} and isinstance(kw.value, ast.Name):
                             fn_name = kw.value.id
@@ -99,16 +102,20 @@ def detect_path(source: str) -> DetectReport:
                 if isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
                     s = node.value.value
                     if len(s) >= 20:
-                        rep.prompts.append({"id": f"{f.stem}-system", "name": "system", "text": s[:200]})
+                        rep.prompts.append(
+                            {"id": f"{f.stem}-system", "name": "system", "text": s[:200]}
+                        )
                         rep.confidence = max(rep.confidence, 0.6)
 
         if f.name in {"server.py", "main.py", "app.py"}:
-            rep.resources.append({
-                "id": f"{f.stem}-source",
-                "name": "server source",
-                "type": "inline",
-                "uri": f"file://{f.name}",
-            })
+            rep.resources.append(
+                {
+                    "id": f"{f.stem}-source",
+                    "name": "server source",
+                    "type": "inline",
+                    "uri": f"file://{f.name}",
+                }
+            )
 
     if agent_count >= 2:
         rep.notes.append("pattern: multi-agent")
@@ -117,4 +124,3 @@ def detect_path(source: str) -> DetectReport:
     if rep.tools or agent_count:
         rep.notes.append("framework: autogen")
     return rep
-

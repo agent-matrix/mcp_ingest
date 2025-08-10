@@ -23,18 +23,18 @@ Compatibility: MatrixHub /catalog/install (via sdk.autoinstall)
 
 import json
 import logging
-import os
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Dict, Iterable, List, Optional, Set, Tuple
 
-from ..sdk import describe as sdk_describe, autoinstall as sdk_autoinstall
-from ..emit.index import write_index
-from ..utils.fetch import LocalSource, prepare_source, FetchError
 from ..detect.base import DetectReport
 from ..detect.fastmcp import detect_path as detect_fastmcp
 from ..detect.langchain import detect_path as detect_langchain
 from ..detect.raw_mcp import detect_path as detect_raw_mcp
+from ..emit.index import write_index
+from ..sdk import autoinstall as sdk_autoinstall
+from ..sdk import describe as sdk_describe
+from ..utils.fetch import LocalSource, prepare_source
 
 # Optional publisher; imported lazily when used
 try:  # pragma: no cover (optional dep path at runtime)
@@ -50,12 +50,13 @@ log = logging.getLogger(__name__)
 # Public API
 # ----------------------------
 
+
 @dataclass
 class HarvestResult:
-    manifests: List[Path]      # all created manifests (absolute paths)
-    index_path: Path           # repo-level index.json (absolute path)
-    errors: List[str]
-    summary: Dict[str, object]  # counts, frameworks, transports, detectors, etc.
+    manifests: list[Path]  # all created manifests (absolute paths)
+    index_path: Path  # repo-level index.json (absolute path)
+    errors: list[str]
+    summary: dict[str, object]  # counts, frameworks, transports, detectors, etc.
 
 
 def harvest_repo(
@@ -82,16 +83,17 @@ def harvest_repo(
         Required when register=True; MatrixHub base URL
     """
 
-    manifests: List[Path] = []
-    errors: List[str] = []
-    by_detector: Dict[str, int] = {"fastmcp": 0, "node": 0, "langchain": 0, "raw": 0}
-    transports: Dict[str, int] = {"sse": 0, "messages": 0, "unknown": 0}
+    manifests: list[Path] = []
+    errors: list[str] = []
+    by_detector: dict[str, int] = {"fastmcp": 0, "node": 0, "langchain": 0, "raw": 0}
+    transports: dict[str, int] = {"sse": 0, "messages": 0, "unknown": 0}
 
     # 1) Prepare local working copy
     try:
         local: LocalSource = prepare_source(source)
     except Exception as e:  # pragma: no cover - network/OS dependent
-        raise RuntimeError(f"prepare_source failed for {source}: {e}")
+        # FIX: Chain the original exception `e` for better debugging.
+        raise RuntimeError(f"prepare_source failed for {source}: {e}") from e
 
     try:
         # 2) Find candidate subfolders
@@ -107,7 +109,9 @@ def harvest_repo(
         for cdir in candidates:
             try:
                 report, detector_tag = _run_detectors_in_order(cdir)
-                if not report or (not report.tools and not report.server_url and not report.resources):
+                if not report or (
+                    not report.tools and not report.server_url and not report.resources
+                ):
                     errors.append(f"no signal from detectors: {cdir}")
                     continue
 
@@ -150,7 +154,10 @@ def harvest_repo(
         # 6) Repo-level index.json
         repo_index = out_root / "index.json"
         # Paths in index can be relative to out_root for portability
-        rel_manifest_paths = [str(p.relative_to(out_root)) if str(p).startswith(str(out_root)) else str(p) for p in manifests]
+        rel_manifest_paths = [
+            str(p.relative_to(out_root)) if str(p).startswith(str(out_root)) else str(p)
+            for p in manifests
+        ]
         write_index(repo_index, rel_manifest_paths, additive=False)
 
         # 7) Optional publish
@@ -160,7 +167,10 @@ def harvest_repo(
             else:
                 try:
                     publish_static(
-                        {"index": str(repo_index), **{f"manifest_{i}": str(p) for i, p in enumerate(manifests)}},
+                        {
+                            "index": str(repo_index),
+                            **{f"manifest_{i}": str(p) for i, p in enumerate(manifests)},
+                        },
                         publish,
                     )
                 except Exception as pe:  # pragma: no cover - remote dependent
@@ -173,13 +183,13 @@ def harvest_repo(
             else:
                 for mpath in manifests:
                     try:
-                        with open(mpath, "r", encoding="utf-8") as fh:
+                        with open(mpath, encoding="utf-8") as fh:
                             manifest = json.load(fh)
                         sdk_autoinstall(matrixhub_url=matrixhub_url, manifest=manifest)
                     except Exception as re:  # pragma: no cover - env dependent
                         errors.append(f"register failed for {mpath.name}: {re}")
 
-        summary: Dict[str, object] = {
+        summary: dict[str, object] = {
             "source": local.origin,
             "prepared_path": str(local.path),
             "manifests": len(manifests),
@@ -190,7 +200,9 @@ def harvest_repo(
             "sha": local.sha,
         }
 
-        return HarvestResult(manifests=manifests, index_path=repo_index.resolve(), errors=errors, summary=summary)
+        return HarvestResult(
+            manifests=manifests, index_path=repo_index.resolve(), errors=errors, summary=summary
+        )
     finally:
         # 9) Cleanup temporary workspace if prepare_source created one
         try:
@@ -214,7 +226,7 @@ def _iter_candidate_dirs(root: Path) -> Iterable[Path]:
       - any directory containing package.json (Node-based MCP)
       - special folders named "servers", "packages", "examples" (scan their children)
     """
-    seen: Set[Path] = set()
+    seen: set[Path] = set()
 
     def add(p: Path) -> None:
         if p.is_dir() and p not in seen:
@@ -279,7 +291,8 @@ def _has_package_json(d: Path) -> bool:
 # Detector chain
 # ----------------------------
 
-def _run_detectors_in_order(cdir: Path) -> Tuple[DetectReport, str]:
+
+def _run_detectors_in_order(cdir: Path) -> tuple[DetectReport, str]:
     """Run detectors in priority order and return (report, detector_tag)."""
     # 1) FastMCP
     rep = detect_fastmcp(str(cdir))
@@ -302,10 +315,13 @@ def _run_detectors_in_order(cdir: Path) -> Tuple[DetectReport, str]:
 
 
 def _good(rep: DetectReport) -> bool:
-    return bool(rep and (rep.tools or rep.server_url or rep.resources) and (rep.confidence or 0) >= 0.5)
+    return bool(
+        rep and (rep.tools or rep.server_url or rep.resources) and (rep.confidence or 0) >= 0.5
+    )
 
 
 # Minimal Node MCP heuristic (kept local to avoid a whole new module for MVP)
+
 
 def _detect_node_mcp(path: str) -> DetectReport:
     d = Path(path)
@@ -320,7 +336,8 @@ def _detect_node_mcp(path: str) -> DetectReport:
 
     deps = {**(data.get("dependencies") or {}), **(data.get("devDependencies") or {})}
     has_mcp = any(
-        k.startswith("@modelcontextprotocol/") or k == "@modelcontextprotocol/sdk" for k in deps.keys()
+        k.startswith("@modelcontextprotocol/") or k == "@modelcontextprotocol/sdk"
+        for k in deps.keys()
     )
     scripts = data.get("scripts") or {}
     joined_scripts = "\n".join(str(v) for v in scripts.values())
@@ -353,12 +370,14 @@ def _detect_node_mcp(path: str) -> DetectReport:
     out.server_url = f"http://127.0.0.1:{port}{route}"
 
     # resource hint
-    out.resources.append({
-        "id": f"{d.name}-pkg",
-        "name": "package.json",
-        "type": "inline",
-        "uri": "file://package.json",
-    })
+    out.resources.append(
+        {
+            "id": f"{d.name}-pkg",
+            "name": "package.json",
+            "type": "inline",
+            "uri": "file://package.json",
+        }
+    )
 
     return out
 
@@ -366,6 +385,7 @@ def _detect_node_mcp(path: str) -> DetectReport:
 # ----------------------------
 # Helpers
 # ----------------------------
+
 
 def _default_url() -> str:
     # offline-friendly default SSE endpoint

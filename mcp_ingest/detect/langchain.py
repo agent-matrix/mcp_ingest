@@ -1,11 +1,10 @@
-
 from __future__ import annotations
-import ast, re
-from pathlib import Path
-from typing import Any, Dict, List
 
-from .base import DetectReport
+import ast
+from pathlib import Path
+
 from ..utils.jsonschema import infer_schema_from_ast_func
+from .base import DetectReport
 
 __all__ = ["detect_path"]
 
@@ -19,7 +18,7 @@ _TOOL_DECORATOR_NAMES = {"tool"}  # @tool from langchain.tools
 _PROMPT_HINTS = ("PromptTemplate", "from langchain.prompts")
 
 
-def _walk_py(root: Path) -> List[Path]:
+def _walk_py(root: Path) -> list[Path]:
     if root.is_file() and root.suffix == ".py":
         return [root]
     return [p for p in root.rglob("*.py") if p.is_file()]
@@ -29,8 +28,8 @@ def _is_langchain_file(text: str) -> bool:
     return any(h in text for h in _LANGCHAIN_HINTS)
 
 
-def _dec_names(fn: ast.FunctionDef) -> List[str]:
-    out: List[str] = []
+def _dec_names(fn: ast.FunctionDef) -> list[str]:
+    out: list[str] = []
     for d in fn.decorator_list:
         if isinstance(d, ast.Name):
             out.append(d.id)
@@ -82,7 +81,11 @@ def detect_path(source: str) -> DetectReport:
             if isinstance(node, ast.Call) and _call_name(node.func) in _TOOL_CLASS_NAMES:
                 tname = None
                 for kw in getattr(node, "keywords", []) or []:
-                    if kw.arg == "name" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                    if (
+                        kw.arg == "name"
+                        and isinstance(kw.value, ast.Constant)
+                        and isinstance(kw.value.value, str)
+                    ):
                         tname = kw.value.value
                         break
                 if tname:
@@ -91,17 +94,21 @@ def detect_path(source: str) -> DetectReport:
 
         # 3) Prompt templates (best-effort)
         if any(h in text for h in _PROMPT_HINTS):
-            rep.prompts.append({"id": f"{f.stem}-prompt", "name": "prompt", "uri": f"file://{f.name}"})
+            rep.prompts.append(
+                {"id": f"{f.stem}-prompt", "name": "prompt", "uri": f"file://{f.name}"}
+            )
             rep.confidence = max(rep.confidence, 0.6)
 
         # 4) Server resource hint (if server.py present)
         if f.name == "server.py":
-            rep.resources.append({
-                "id": f"{f.parent.name}-server",
-                "name": "server source",
-                "type": "inline",
-                "uri": f"file://{f.name}",
-            })
+            rep.resources.append(
+                {
+                    "id": f"{f.parent.name}-server",
+                    "name": "server source",
+                    "type": "inline",
+                    "uri": f"file://{f.name}",
+                }
+            )
 
         if is_lc:
             rep.notes.append(f"langchain usage in {f.name}")
@@ -112,4 +119,3 @@ def detect_path(source: str) -> DetectReport:
         rep.notes.append(f"found {len(rep.prompts)} prompt(s)")
 
     return rep
-

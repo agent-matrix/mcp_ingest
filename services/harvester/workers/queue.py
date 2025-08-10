@@ -1,24 +1,35 @@
 from __future__ import annotations
-import time
+
 import threading
 import uuid
-from queue import Queue, Empty
-from typing import Any, Dict, Optional, Tuple
+from queue import Queue
+from typing import Any
 
-JobPayload = Dict[str, Any]
+JobPayload = dict[str, Any]
+
 
 class HarvesterQueue:
     """Abstract queue API."""
-    def enqueue(self, job: JobPayload) -> str: raise NotImplementedError
-    def dequeue(self, timeout: float = 1.0) -> Tuple[str, JobPayload]: raise NotImplementedError
-    def ack(self, job_id: str) -> None: raise NotImplementedError
-    def nack(self, job_id: str) -> None: raise NotImplementedError
+
+    def enqueue(self, job: JobPayload) -> str:
+        raise NotImplementedError
+
+    def dequeue(self, timeout: float = 1.0) -> tuple[str, JobPayload]:
+        raise NotImplementedError
+
+    def ack(self, job_id: str) -> None:
+        raise NotImplementedError
+
+    def nack(self, job_id: str) -> None:
+        raise NotImplementedError
+
 
 class InMemoryQueue(HarvesterQueue):
     """Dev-only in-memory queue with visibility timeout semantics (simplified)."""
+
     def __init__(self) -> None:
-        self.q: "Queue[Tuple[str, JobPayload]]" = Queue()
-        self.inflight: Dict[str, JobPayload] = {}
+        self.q: Queue[tuple[str, JobPayload]] = Queue()
+        self.inflight: dict[str, JobPayload] = {}
         self.lock = threading.Lock()
 
     def enqueue(self, job: JobPayload) -> str:
@@ -27,7 +38,7 @@ class InMemoryQueue(HarvesterQueue):
         self.q.put((jid, job))
         return jid
 
-    def dequeue(self, timeout: float = 1.0) -> Tuple[str, JobPayload]:
+    def dequeue(self, timeout: float = 1.0) -> tuple[str, JobPayload]:
         jid, payload = self.q.get(timeout=timeout)
         with self.lock:
             self.inflight[jid] = payload

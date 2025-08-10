@@ -1,7 +1,7 @@
-
 from __future__ import annotations
+
 import ast
-from typing import Any, Dict
+from typing import Any
 
 # Very light, best-effort schema inference from Python AST function signatures.
 
@@ -13,7 +13,7 @@ BASIC_MAP = {
 }
 
 
-def _ann_to_schema(node: ast.AST | None) -> Dict[str, Any]:
+def _ann_to_schema(node: ast.AST | None) -> dict[str, Any]:
     if node is None:
         return {"type": "string"}
     # Name: str/int/bool/float
@@ -33,8 +33,8 @@ def _ann_to_schema(node: ast.AST | None) -> Dict[str, Any]:
     return {"type": "string"}
 
 
-def infer_schema_from_ast_func(fn: ast.FunctionDef) -> Dict[str, Any]:
-    props: Dict[str, Any] = {}
+def infer_schema_from_ast_func(fn: ast.FunctionDef) -> dict[str, Any]:
+    props: dict[str, Any] = {}
     required: list[str] = []
 
     # Positional-only & regular args
@@ -59,13 +59,13 @@ def infer_schema_from_ast_func(fn: ast.FunctionDef) -> Dict[str, Any]:
         if not (fn.args.kw_defaults or [])[i]:
             required.append(a.arg)
 
-    schema: Dict[str, Any] = {"type": "object", "properties": props}
+    schema: dict[str, Any] = {"type": "object", "properties": props}
     if required:
         schema["required"] = sorted(required)
     return schema
 
 
-def merge_schemas(a: Dict[str, Any], b: Dict[str, Any]) -> Dict[str, Any]:
+def merge_schemas(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
     """Shallow merge of two object schemas (best-effort)."""
     if not a:
         return dict(b)
@@ -83,5 +83,5 @@ def merge_schemas(a: Dict[str, Any], b: Dict[str, Any]) -> Dict[str, Any]:
             out["required"] = req
     return out
 
-__all__ = ["infer_schema_from_ast_func", "merge_schemas"]
 
+__all__ = ["infer_schema_from_ast_func", "merge_schemas"]

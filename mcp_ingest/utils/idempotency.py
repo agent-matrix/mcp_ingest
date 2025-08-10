@@ -1,15 +1,18 @@
-
 from __future__ import annotations
+
 import time
-from typing import Callable, TypeVar, Tuple
+from collections.abc import Callable
+from typing import TypeVar
 
 T = TypeVar("T")
+
 
 class RetryConfig:
     def __init__(self, *, attempts: int = 3, base_delay: float = 0.5, max_delay: float = 5.0):
         self.attempts = max(1, attempts)
         self.base_delay = base_delay
         self.max_delay = max_delay
+
 
 def is_transient(status: int | None, exc: Exception | None) -> bool:
     if status is None:
@@ -18,9 +21,11 @@ def is_transient(status: int | None, exc: Exception | None) -> bool:
         return True
     return False
 
+
 def backoff_sleep(attempt: int, cfg: RetryConfig) -> None:
     delay = min(cfg.base_delay * (2 ** (attempt - 1)), cfg.max_delay)
     time.sleep(delay)
+
 
 class HTTPError(RuntimeError):
     def __init__(self, message: str, *, status: int | None = None, body: object | None = None):
@@ -28,8 +33,9 @@ class HTTPError(RuntimeError):
         self.status = status
         self.body = body
 
+
 # simple decorator-free retry helper
-def retry_request(func: Callable[[], Tuple[int, T]], *, cfg: RetryConfig) -> T:
+def retry_request(func: Callable[[], tuple[int, T]], *, cfg: RetryConfig) -> T:
     last_exc: Exception | None = None
     for attempt in range(1, cfg.attempts + 1):
         try:
@@ -51,5 +57,5 @@ def retry_request(func: Callable[[], Tuple[int, T]], *, cfg: RetryConfig) -> T:
                 continue
             raise
     # should not reach
-    assert False, last_exc
-
+    # FIX: Replaced `assert False` with `raise AssertionError` for safety.
+    raise AssertionError(f"Retry loop finished unexpectedly. Last exception: {last_exc}")

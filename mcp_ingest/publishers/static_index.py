@@ -1,12 +1,13 @@
 from __future__ import annotations
+
 import hashlib
 import json
-import os
 import shutil
 import subprocess
-from dataclasses import dataclass, asdict
+from collections.abc import Iterable, Sequence
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Union
+from typing import Any
 
 try:  # optional
     import boto3  # type: ignore
@@ -30,11 +31,11 @@ __all__ = [
 class PublishResult:
     provider: str
     destination: str
-    objects: Dict[str, str]  # key -> final URL or path
+    objects: dict[str, str]  # key -> final URL or path
     ok: bool
-    error: Optional[str] = None
+    error: str | None = None
 
-    def to_dict(self) -> Dict[str, object]:
+    def to_dict(self) -> dict[str, object]:
         return asdict(self)
 
 
@@ -51,8 +52,8 @@ def _sha256_file(p: Path) -> str:
     return h.hexdigest()
 
 
-def _ensure_listable_paths(paths: Dict[str, str | Path]) -> Dict[str, Path]:
-    out: Dict[str, Path] = {}
+def _ensure_listable_paths(paths: dict[str, str | Path]) -> dict[str, Path]:
+    out: dict[str, Path] = {}
     for k, v in paths.items():
         p = Path(str(v)).expanduser().resolve()
         if not p.exists():
@@ -82,12 +83,15 @@ def _run(cmd: Sequence[str]) -> None:
 
 # S3 provider (boto3 preferred; fallback to aws CLI)
 
-def _publish_s3(paths: Dict[str, Path], dest: str, *, cache_control: str, content_hash: bool) -> PublishResult:
+
+def _publish_s3(
+    paths: dict[str, Path], dest: str, *, cache_control: str, content_hash: bool
+) -> PublishResult:
     # dest example: s3://my-bucket/prefix/
     if not dest.startswith("s3://"):
         return PublishResult("s3", dest, {}, False, error="dest must start with s3://bucket/")
 
-    bucket_and_prefix = dest[len("s3://"):]
+    bucket_and_prefix = dest[len("s3://") :]
     if "/" in bucket_and_prefix:
         bucket, prefix = bucket_and_prefix.split("/", 1)
         if prefix and not prefix.endswith("/"):
@@ -95,7 +99,7 @@ def _publish_s3(paths: Dict[str, Path], dest: str, *, cache_control: str, conten
     else:
         bucket, prefix = bucket_and_prefix, ""
 
-    published: Dict[str, str] = {}
+    published: dict[str, str] = {}
 
     def _object_key(name: str, p: Path) -> str:
         if content_hash:
@@ -146,11 +150,14 @@ def _publish_s3(paths: Dict[str, Path], dest: str, *, cache_control: str, conten
 
 # GH Pages provider (treat dest as local folder; caller pushes via git/CI)
 
-def _publish_ghpages(paths: Dict[str, Path], dest: str, *, cache_control: str, content_hash: bool) -> PublishResult:
+
+def _publish_ghpages(
+    paths: dict[str, Path], dest: str, *, cache_control: str, content_hash: bool
+) -> PublishResult:
     # dest example: ./public or ../docs (a folder tracked by GitHub Pages)
     target = Path(dest).expanduser().resolve()
     target.mkdir(parents=True, exist_ok=True)
-    published: Dict[str, str] = {}
+    published: dict[str, str] = {}
 
     for k, p in paths.items():
         if content_hash:
@@ -173,7 +180,7 @@ def _publish_ghpages(paths: Dict[str, Path], dest: str, *, cache_control: str, c
 
 
 def publish(
-    paths: Dict[str, str | Path],
+    paths: dict[str, str | Path],
     dest: str,
     *,
     provider: str = "s3",
@@ -193,7 +200,9 @@ def publish(
     return PublishResult(provider, dest, {}, False, error=f"unknown provider: {provider}")
 
 
-def update_global_index(manifests: List[str], shard_key: str, *, out_dir: str | Path = "global-index") -> None:
+def update_global_index(
+    manifests: list[str], shard_key: str, *, out_dir: str | Path = "global-index"
+) -> None:
     """Write (or update) a sharded global index file locally.
 
     Shape: out_dir/index-<shard_key>.json with {"manifests": [...]} (deduped).
@@ -203,7 +212,7 @@ def update_global_index(manifests: List[str], shard_key: str, *, out_dir: str | 
     odir.mkdir(parents=True, exist_ok=True)
     shard = odir / f"index-{shard_key}.json"
 
-    existing: List[str] = []
+    existing: list[str] = []
     if shard.exists():
         try:
             data = json.loads(shard.read_text(encoding="utf-8"))
@@ -212,7 +221,7 @@ def update_global_index(manifests: List[str], shard_key: str, *, out_dir: str | 
         except Exception:  # pragma: no cover
             existing = []
 
-    merged: List[str] = []
+    merged: list[str] = []
     for x in [*existing, *manifests]:
         if x not in merged:
             merged.append(x)
@@ -225,16 +234,16 @@ def update_global_index(manifests: List[str], shard_key: str, *, out_dir: str | 
 # -----------------------------------------------------------------------------
 
 
-def _extract_from_index_payload(payload: Any, base: Optional[Path]) -> List[str]:
+def _extract_from_index_payload(payload: Any, base: Path | None) -> list[str]:
     """Extract manifest entries from an index-like payload.
 
     Supports common shapes and resolves relative paths against *base* (if provided).
     """
-    out: List[str] = []
+    out: list[str] = []
     if not isinstance(payload, dict):
         return out
 
-    items: List[str] = []
+    items: list[str] = []
     if isinstance(payload.get("manifests"), list):
         items = [x for x in payload["manifests"] if isinstance(x, str)]
     elif isinstance(payload.get("items"), list):
@@ -259,7 +268,7 @@ def _extract_from_index_payload(payload: Any, base: Optional[Path]) -> List[str]
     return out
 
 
-def merge_indexes(child_index_paths: Iterable[Union[str, Path]]) -> Dict[str, Any]:
+def merge_indexes(child_index_paths: Iterable[str | Path]) -> dict[str, Any]:
     """Merge multiple *local* child index.json files into a single repo-level index.
 
     Relative manifest entries are resolved against the directory of the child index file.
@@ -276,12 +285,12 @@ def merge_indexes(child_index_paths: Iterable[Union[str, Path]]) -> Dict[str, An
     Dict[str, Any]
         A dict with shape {"manifests": [ ... ]} suitable to write as index.json.
     """
-    merged: List[str] = []
+    merged: list[str] = []
 
     for p in child_index_paths:
         ipath = Path(str(p)).expanduser()
-        base_dir: Optional[Path] = None
-        data: Optional[Dict[str, Any]] = None
+        base_dir: Path | None = None
+        data: dict[str, Any] | None = None
 
         # Only local files are read. If it looks like a URL, skip reading and just add it.
         s = str(p)

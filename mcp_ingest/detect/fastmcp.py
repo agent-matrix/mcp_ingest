@@ -1,14 +1,13 @@
-
 from __future__ import annotations
+
 import ast
 from pathlib import Path
-from typing import Any, Dict, List, Optional
 
-from .base import DetectReport
 from ..utils.jsonschema import infer_schema_from_ast_func
+from .base import DetectReport
 
 
-def _walk_py_files(root: Path) -> List[Path]:
+def _walk_py_files(root: Path) -> list[Path]:
     if root.is_file() and root.suffix == ".py":
         return [root]
     return [p for p in root.rglob("*.py") if p.is_file()]
@@ -31,7 +30,7 @@ def _call_name(node: ast.AST) -> str:
     return ""
 
 
-def _string_or_none(node: Optional[ast.AST]) -> Optional[str]:
+def _string_or_none(node: ast.AST | None) -> str | None:
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return node.value
     return None
@@ -69,24 +68,27 @@ def detect_path(source: str) -> DetectReport:
                 if any(_is_tool_decorator(d) for d in node.decorator_list):
                     tname = node.name.replace("_", "-")
                     schema = infer_schema_from_ast_func(node)
-                    report.tools.append({
-                        "id": tname,
-                        "name": tname,
-                        "input_schema": schema,
-                    })
+                    report.tools.append(
+                        {
+                            "id": tname,
+                            "name": tname,
+                            "input_schema": schema,
+                        }
+                    )
                     report.confidence = max(report.confidence, 0.8)
 
         # Optionally, detect a server.py to add as resource reference
         if f.name == "server.py":
-            report.resources.append({
-                "id": f"{f.parent.name}-server",
-                "name": "server source",
-                "type": "inline",
-                "uri": f"file://{f.name}",
-            })
+            report.resources.append(
+                {
+                    "id": f"{f.parent.name}-server",
+                    "name": "server source",
+                    "type": "inline",
+                    "uri": f"file://{f.name}",
+                }
+            )
 
     if report.tools:
         report.notes.append(f"found {len(report.tools)} tool(s) via @tool")
 
     return report
-

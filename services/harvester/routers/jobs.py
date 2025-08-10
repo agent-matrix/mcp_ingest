@@ -1,11 +1,11 @@
 from __future__ import annotations
-from datetime import datetime
-from typing import Any, Dict, Optional
+
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, validator
 
-from ..store.models import get_session, Job, job_to_view
+from ..store.models import Job, get_session, job_to_view
 from ..workers.queue import InMemoryQueue
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
@@ -30,15 +30,16 @@ class JobSubmit(BaseModel):
     """
 
     source: str = Field(..., description="git URL, zip URL, or local path")
-    mode: Optional[str] = Field(
+    mode: str | None = Field(
         default=None,
         description=(
             "Job mode. If 'harvest_repo', the worker will run the repo-wide harvester; "
             "otherwise it defaults to single-target 'pack'."
         ),
     )
-    options: Optional[Dict[str, Any]] = Field(
-        default=None, description="Additional execution options (build/validate/publish/register/etc.)"
+    options: dict[str, Any] | None = Field(
+        default=None,
+        description="Additional execution options (build/validate/publish/register/etc.)",
     )
 
     @validator("source")
@@ -61,7 +62,7 @@ def submit_job(payload: JobSubmit) -> JobId:
     db = get_session()
     try:
         # Normalize options
-        options: Dict[str, Any] = dict(payload.options or {})
+        options: dict[str, Any] = dict(payload.options or {})
         if payload.mode:
             options.setdefault("mode", payload.mode)
 
@@ -114,6 +115,7 @@ def discover_jobs(query: str = ""):
 
 
 # Helper for app.py
+
 
 def get_queue():
     return _queue

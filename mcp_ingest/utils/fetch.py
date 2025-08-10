@@ -17,17 +17,17 @@ Notes:
   - Cleanup is idempotent; local directories are never removed.
 """
 
-import io
 import os
 import re
 import shutil
 import subprocess
 import tempfile
 import zipfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Literal, Optional, Tuple
-from urllib.parse import urlparse, unquote
+from typing import Literal
+from urllib.parse import unquote, urlparse
 
 import httpx
 
@@ -47,16 +47,17 @@ class FetchError(RuntimeError):
 @dataclass
 class LocalSource:
     kind: Literal["dir", "git", "zip"]
-    path: Path                  # absolute path to the prepared source folder
-    origin: str                 # original user-provided source string
-    cleanup: Callable[[], None] # idempotent cleanup
-    sha: Optional[str] = None   # git commit (if applicable)
-    repo_name: Optional[str] = None  # inferred name for tagging
+    path: Path  # absolute path to the prepared source folder
+    origin: str  # original user-provided source string
+    cleanup: Callable[[], None]  # idempotent cleanup
+    sha: str | None = None  # git commit (if applicable)
+    repo_name: str | None = None  # inferred name for tagging
 
 
 # ----------------------------
 # Public API
 # ----------------------------
+
 
 def prepare_source(source: str, *, workdir: str | Path | None = None) -> LocalSource:
     """
@@ -97,7 +98,7 @@ _SCP_GIT_RE = re.compile(r"^[\w\-]+@[\w\.\-]+:.*\.git(?:@(?P<ref>[\w\.\-/]+))?$"
 _ZIP_RE = re.compile(r"(?i)\.zip$")
 
 
-def _classify_source(source: str) -> Tuple[Literal["dir", "git", "zip"], Optional[str]]:
+def _classify_source(source: str) -> tuple[Literal["dir", "git", "zip"], str | None]:
     """Return (kind, ref). Ref may be branch/tag/sha for git sources."""
     # file:// scheme?
     parsed = urlparse(source)
@@ -111,7 +112,11 @@ def _classify_source(source: str) -> Tuple[Literal["dir", "git", "zip"], Optiona
         ref = _extract_ref(source)
         return "git", ref
 
-    if parsed.scheme in {"http", "https", "ssh", "git"} or source.endswith(".git") or ".git@" in source:
+    if (
+        parsed.scheme in {"http", "https", "ssh", "git"}
+        or source.endswith(".git")
+        or ".git@" in source
+    ):
         # Accept https git URLs (with or without @ref)
         if ".git" in source:
             ref = _extract_ref(source)
@@ -121,7 +126,7 @@ def _classify_source(source: str) -> Tuple[Literal["dir", "git", "zip"], Optiona
     return "dir", None
 
 
-def _extract_ref(source: str) -> Optional[str]:
+def _extract_ref(source: str) -> str | None:
     """Parse @ref from the tail of a git-like string."""
     m = _GIT_RE.search(source)
     if not m:
@@ -138,7 +143,8 @@ def _extract_ref(source: str) -> Optional[str]:
 # ZIP handling
 # ----------------------------
 
-def _prepare_from_zip(url_or_file: str, base: Optional[Path]) -> LocalSource:
+
+def _prepare_from_zip(url_or_file: str, base: Path | None) -> LocalSource:
     # Create temp workspace
     tmp_root = Path(tempfile.mkdtemp(prefix="mcpzip-")) if base is None else base
     created_tmp = base is None
@@ -158,12 +164,19 @@ def _prepare_from_zip(url_or_file: str, base: Optional[Path]) -> LocalSource:
             if created_tmp:
                 shutil.rmtree(tmp_root, ignore_errors=True)
 
-        return LocalSource(kind="zip", path=path, origin=url_or_file, cleanup=cleanup, sha=None, repo_name=repo_name)
+        return LocalSource(
+            kind="zip",
+            path=path,
+            origin=url_or_file,
+            cleanup=cleanup,
+            sha=None,
+            repo_name=repo_name,
+        )
     except Exception as e:
         # cleanup on failure
         if base is None:
             shutil.rmtree(tmp_root, ignore_errors=True)
-        raise _as_fetch_error(e, f"failed to prepare zip: {url_or_file}")
+        raise _as_fetch_error(e, f"failed to prepare zip: {url_or_file}") from e
 
 
 def _download_zip_if_needed(url_or_file: str, dest_dir: Path) -> Path:
@@ -227,7 +240,9 @@ def _safe_extract_zip(zip_path: Path, dest: Path, *, max_uncompressed: int) -> P
             for info in zf.infolist():
                 total_uncompressed += info.file_size
                 if total_uncompressed > max_uncompressed:
-                    raise FetchError(f"zip uncompressed content too large (> {max_uncompressed} bytes)")
+                    raise FetchError(
+                        f"zip uncompressed content too large (> {max_uncompressed} bytes)"
+                    )
 
                 # Path traversal guard
                 _assert_safe_member(info.filename)
@@ -280,7 +295,8 @@ def _strip_singleton_dir(extracted_root: Path) -> Path:
 # Git handling
 # ----------------------------
 
-def _prepare_from_git(url: str, ref: Optional[str], base: Optional[Path]) -> LocalSource:
+
+def _prepare_from_git(url: str, ref: str | None, base: Path | None) -> LocalSource:
     tmp_root = Path(tempfile.mkdtemp(prefix="mcpgit-")) if base is None else base
     created_tmp = base is None
     repo_dir = tmp_root / "repo"
@@ -294,14 +310,17 @@ def _prepare_from_git(url: str, ref: Optional[str], base: Optional[Path]) -> Loc
             if created_tmp:
                 shutil.rmtree(tmp_root, ignore_errors=True)
 
-        return LocalSource(kind="git", path=path, origin=url, cleanup=cleanup, sha=sha, repo_name=name)
+        return LocalSource(
+            kind="git", path=path, origin=url, cleanup=cleanup, sha=sha, repo_name=name
+        )
     except Exception as e:
         if base is None:
             shutil.rmtree(tmp_root, ignore_errors=True)
-        raise _as_fetch_error(e, f"failed to prepare git repo: {url}")
+        # FIX: Chain the original exception to preserve its traceback
+        raise _as_fetch_error(e, f"failed to prepare git repo: {url}") from e
 
 
-def _git_clone(url: str, dest: Path, *, ref: Optional[str]) -> str:
+def _git_clone(url: str, dest: Path, *, ref: str | None) -> str:
     dest.parent.mkdir(parents=True, exist_ok=True)
     # If ref provided, we still shallow fetch just that ref when possible.
     # Fallback: clone --depth=1 and then checkout ref (may fetch additional).
@@ -327,19 +346,28 @@ def _infer_repo_name(url: str) -> str:
     tail = url.rstrip("/").split("/")[-1]
     if ".git" in tail:
         tail = tail.split(".git", 1)[0]
-    if "@” in tail or "@" in tail:
+    # FIX: Use a standard quote and remove the redundant check.
+    if "@" in tail:
         tail = tail.split("@", 1)[0]
     return tail or "repo"
 
 
-def _run(cmd, *, cwd: Optional[Path] = None, timeout: int = 600) -> subprocess.CompletedProcess:
-    return subprocess.run(cmd, cwd=str(cwd) if cwd else None, check=True,
-                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=timeout)
+def _run(cmd, *, cwd: Path | None = None, timeout: int = 600) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        cmd,
+        cwd=str(cwd) if cwd else None,
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=timeout,
+    )
 
 
 # ----------------------------
 # Directory handling
 # ----------------------------
+
 
 def _prepare_from_dir(path_str: str) -> LocalSource:
     p = Path(path_str).expanduser().resolve()
@@ -358,6 +386,7 @@ def _prepare_from_dir(path_str: str) -> LocalSource:
 # ----------------------------
 # Helpers
 # ----------------------------
+
 
 def _as_fetch_error(exc: Exception, ctx: str) -> FetchError:
     if isinstance(exc, FetchError):

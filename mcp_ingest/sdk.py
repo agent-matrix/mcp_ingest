@@ -1,7 +1,8 @@
-
 from __future__ import annotations
-from typing import Any, Dict, List, Optional
+
 from pathlib import Path
+from typing import Any
+
 from .emit.manifest import build_manifest
 from .register.hub_client import HubClient
 from .utils.io import write_json
@@ -13,14 +14,14 @@ def describe(
     *,
     name: str,
     url: str,
-    tools: Optional[List[str]] = None,
-    resources: Optional[List[Dict[str, Any]]] = None,
+    tools: list[str] | None = None,
+    resources: list[dict[str, Any]] | None = None,
     description: str = "",
     version: str = "0.1.0",
-    entity_id: Optional[str] = None,
-    entity_name: Optional[str] = None,
+    entity_id: str | None = None,
+    entity_name: str | None = None,
     out_dir: str | Path = ".",
-) -> Dict[str, str]:
+) -> dict[str, str]:
     """Create manifest.json and index.json without running the server.
     Returns paths {manifest_path, index_path}.
     """
@@ -53,18 +54,19 @@ def describe(
 def autoinstall(
     *,
     matrixhub_url: str,
-    manifest: Dict[str, Any] | None = None,
+    manifest: dict[str, Any] | None = None,
     manifest_path: str | Path | None = None,
-    entity_uid: Optional[str] = None,
+    entity_uid: str | None = None,
     target: str = "./",
     token: str | None = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """POST inline manifest to MatrixHub /catalog/install.
     If manifest is not supplied, read it from manifest_path (default ./manifest.json).
     """
     if manifest is None:
         mpath = Path(manifest_path or "./manifest.json").expanduser()
         import json
+
         manifest = json.loads(mpath.read_text(encoding="utf-8"))
 
     # compute uid if missing
@@ -78,4 +80,3 @@ def autoinstall(
 
     client = HubClient(matrixhub_url, token=token)
     return client.install_manifest(entity_uid=entity_uid, target=target, manifest=manifest)
-

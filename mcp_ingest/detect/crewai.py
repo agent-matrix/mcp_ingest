@@ -1,8 +1,8 @@
-
 from __future__ import annotations
+
 import ast
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from .base import DetectReport
 
@@ -18,7 +18,7 @@ _AGENT_CALL = "Agent"
 _TASK_CALL = "Task"
 
 
-def _walk_py(root: Path) -> List[Path]:
+def _walk_py(root: Path) -> list[Path]:
     if root.is_file() and root.suffix == ".py":
         return [root]
     return [p for p in root.rglob("*.py") if p.is_file()]
@@ -36,7 +36,7 @@ def _text_has_cw_hints(text: str) -> bool:
     return any(h in text for h in _CW_IMPORT_HINTS)
 
 
-def _load_yaml(path: Path) -> Dict[str, Any] | None:
+def _load_yaml(path: Path) -> dict[str, Any] | None:
     if yaml is None:
         return None
     try:
@@ -69,11 +69,23 @@ def detect_path(source: str) -> DetectReport:
             if isinstance(node, ast.Call) and _call_name(node.func) == _AGENT_CALL:
                 nm = rl = bs = None
                 for kw in getattr(node, "keywords", []) or []:
-                    if kw.arg == "name" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                    if (
+                        kw.arg == "name"
+                        and isinstance(kw.value, ast.Constant)
+                        and isinstance(kw.value.value, str)
+                    ):
                         nm = kw.value.value
-                    if kw.arg == "role" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                    if (
+                        kw.arg == "role"
+                        and isinstance(kw.value, ast.Constant)
+                        and isinstance(kw.value.value, str)
+                    ):
                         rl = kw.value.value
-                    if kw.arg == "backstory" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                    if (
+                        kw.arg == "backstory"
+                        and isinstance(kw.value, ast.Constant)
+                        and isinstance(kw.value.value, str)
+                    ):
                         bs = kw.value.value
                 if nm:
                     rep.tools.append({"id": nm, "name": nm})  # treat agent as callable tool proxy
@@ -87,7 +99,11 @@ def detect_path(source: str) -> DetectReport:
             if isinstance(node, ast.Call) and _call_name(node.func) == _TASK_CALL:
                 desc = None
                 for kw in getattr(node, "keywords", []) or []:
-                    if kw.arg == "description" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                    if (
+                        kw.arg == "description"
+                        and isinstance(kw.value, ast.Constant)
+                        and isinstance(kw.value.value, str)
+                    ):
                         desc = kw.value.value
                         break
                 if desc and len(desc) >= 20:
@@ -95,12 +111,14 @@ def detect_path(source: str) -> DetectReport:
                     rep.confidence = max(rep.confidence, 0.6)
 
         if f.name in {"server.py", "main.py", "app.py"}:
-            rep.resources.append({
-                "id": f"{f.stem}-source",
-                "name": "server source",
-                "type": "inline",
-                "uri": f"file://{f.name}",
-            })
+            rep.resources.append(
+                {
+                    "id": f"{f.stem}-source",
+                    "name": "server source",
+                    "type": "inline",
+                    "uri": f"file://{f.name}",
+                }
+            )
 
     # Parse YAML crew files (agents.yaml, tasks.yaml, crew.yaml)
     for y in [p for p in root.rglob("*.yaml") if p.is_file()]:
@@ -129,4 +147,3 @@ def detect_path(source: str) -> DetectReport:
     if rep.tools or rep.prompts:
         rep.notes.append("framework: crewai")
     return rep
-

@@ -1,9 +1,9 @@
-
 from __future__ import annotations
+
 import ast
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Iterator, List, Optional
 
 __all__ = [
     "safe_parse",
@@ -19,6 +19,7 @@ __all__ = [
 
 # ---- basic parsing ----
 
+
 def safe_parse(src: str, *, filename: str = "<string>") -> ast.AST:
     """Parse Python source to AST without executing it.
     Tolerant to minor syntax quirks; raises SyntaxError if irrecoverable.
@@ -32,6 +33,7 @@ def parse_file(path: str | Path) -> ast.AST:
 
 
 # ---- discovery helpers ----
+
 
 def iter_functions(tree: ast.AST) -> Iterator[ast.FunctionDef]:
     for node in ast.walk(tree):
@@ -48,8 +50,8 @@ def _dotted_name(node: ast.AST) -> str:
     return ""
 
 
-def get_decorator_names(fn: ast.FunctionDef) -> List[str]:
-    names: List[str] = []
+def get_decorator_names(fn: ast.FunctionDef) -> list[str]:
+    names: list[str] = []
     for d in fn.decorator_list:
         names.append(_dotted_name(d))
     return [n for n in names if n]
@@ -58,11 +60,11 @@ def get_decorator_names(fn: ast.FunctionDef) -> List[str]:
 @dataclass
 class ArgSpec:
     name: str
-    annotation: Optional[str] = None
+    annotation: str | None = None
     has_default: bool = False
 
 
-def _ann_to_str(node: Optional[ast.AST]) -> Optional[str]:
+def _ann_to_str(node: ast.AST | None) -> str | None:
     if node is None:
         return None
     if isinstance(node, ast.Name):
@@ -76,8 +78,8 @@ def _ann_to_str(node: Optional[ast.AST]) -> Optional[str]:
     return None
 
 
-def function_args(fn: ast.FunctionDef) -> List[ArgSpec]:
-    args: List[ArgSpec] = []
+def function_args(fn: ast.FunctionDef) -> list[ArgSpec]:
+    args: list[ArgSpec] = []
 
     posonly = list(getattr(fn.args, "posonlyargs", []) or [])
     regargs = list(fn.args.args or [])
@@ -100,7 +102,7 @@ def function_args(fn: ast.FunctionDef) -> List[ArgSpec]:
     return args
 
 
-def find_fastmcp_name(tree: ast.AST) -> Optional[str]:
+def find_fastmcp_name(tree: ast.AST) -> str | None:
     """Return FastMCP(name=...) if present; otherwise None."""
     for node in ast.walk(tree):
         if isinstance(node, ast.Call) and _dotted_name(node.func).endswith("FastMCP"):
@@ -110,16 +112,19 @@ def find_fastmcp_name(tree: ast.AST) -> Optional[str]:
                 if isinstance(a0, ast.Constant) and isinstance(a0.value, str):
                     return a0.value
             for kw in getattr(node, "keywords", []) or []:
-                if kw.arg == "name" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                if (
+                    kw.arg == "name"
+                    and isinstance(kw.value, ast.Constant)
+                    and isinstance(kw.value.value, str)
+                ):
                     return kw.value.value
     return None
 
 
-def find_tool_functions(tree: ast.AST) -> List[ast.FunctionDef]:
-    out: List[ast.FunctionDef] = []
+def find_tool_functions(tree: ast.AST) -> list[ast.FunctionDef]:
+    out: list[ast.FunctionDef] = []
     for fn in iter_functions(tree):
         decos = get_decorator_names(fn)
         if any(name.split(".")[-1] == "tool" for name in decos):
             out.append(fn)
     return out
-

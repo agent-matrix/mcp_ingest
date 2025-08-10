@@ -26,8 +26,6 @@ import tempfile
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Tuple, Type
-
 
 __all__ = ["SafeTemporaryDirectory", "mktempdir"]
 
@@ -65,13 +63,13 @@ class SafeTemporaryDirectory(AbstractContextManager[Path]):
     """
 
     prefix: str = "mcp-"
-    base_dir: Optional[Path] = None
+    base_dir: Path | None = None
     delete: bool = True
     keep_on_error: bool = False
     env_keep_flag: str = "MCP_INGEST_KEEP_TEMPS"
 
     # Internal
-    _path: Optional[Path] = None
+    _path: Path | None = None
     _cleaned: bool = False
 
     def __post_init__(self) -> None:
@@ -91,10 +89,10 @@ class SafeTemporaryDirectory(AbstractContextManager[Path]):
 
     def __exit__(
         self,
-        exc_type: Optional[Type[BaseException]],
-        exc: Optional[BaseException],
-        tb: Optional[object],
-    ) -> Optional[bool]:
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: object | None,
+    ) -> bool | None:
         # Keep if requested by flag/env and an exception occurred
         keep_env = os.getenv(self.env_keep_flag, "").strip().lower() in {"1", "true", "yes"}
         if self.keep_on_error and exc_type is not None:
@@ -136,9 +134,14 @@ class SafeTemporaryDirectory(AbstractContextManager[Path]):
             pass
 
 
-def mktempdir(prefix: str = "mcp-", *, base_dir: Optional[str | Path] = None,
-              delete: bool = True, keep_on_error: bool = False,
-              env_keep_flag: str = "MCP_INGEST_KEEP_TEMPS") -> SafeTemporaryDirectory:
+def mktempdir(
+    prefix: str = "mcp-",
+    *,
+    base_dir: str | Path | None = None,
+    delete: bool = True,
+    keep_on_error: bool = False,
+    env_keep_flag: str = "MCP_INGEST_KEEP_TEMPS",
+) -> SafeTemporaryDirectory:
     """Create a safe temporary directory context manager.
 
     Returns a `SafeTemporaryDirectory` which yields a `pathlib.Path` when used

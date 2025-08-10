@@ -1,9 +1,10 @@
-
 from __future__ import annotations
-import json, os, re, shlex, subprocess, time
-from dataclasses import dataclass, asdict
-from pathlib import Path
-from typing import Any, Dict, List, Optional
+
+import re
+import subprocess
+import time
+from dataclasses import asdict, dataclass
+from typing import Any
 
 # Optional: reuse MVP probe when network is allowed
 try:  # pragma: no cover (optional at runtime)
@@ -22,18 +23,18 @@ __all__ = [
 class ValidationReport:
     image: str
     success: bool
-    exit_code: Optional[int]
+    exit_code: int | None
     timed_out: bool
     reachable: bool
-    endpoint_url: Optional[str]
-    transport: Optional[str]
-    port: Optional[int]
-    tools_confirmed: List[str]
-    timings_ms: Dict[str, int]
+    endpoint_url: str | None
+    transport: str | None
+    port: int | None
+    tools_confirmed: list[str]
+    timings_ms: dict[str, int]
     logs_excerpt: str
-    error: Optional[str]
+    error: str | None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         # Ensure JSON-serializable values
         d["tools_confirmed"] = list(self.tools_confirmed)
@@ -45,7 +46,7 @@ _ENDPOINT_RE = re.compile(r"(?i)(http://[\w\.-]+:(\d+)/(sse|messages))")
 _PORT_RE = re.compile(r"(?i)(?:PORT\s*=\s*(\d{3,5})|port\s*[:=]\s*(\d{3,5}))")
 
 
-def discover_endpoint(logs: str, *, default_port: int = 6288) -> Dict[str, Any]:
+def discover_endpoint(logs: str, *, default_port: int = 6288) -> dict[str, Any]:
     """Heuristic endpoint discovery from container logs.
     Returns dict: {url, transport, port}
     """
@@ -70,18 +71,28 @@ def discover_endpoint(logs: str, *, default_port: int = 6288) -> Dict[str, Any]:
             port = default_port
         # Prefer /sse unless messages explicitly mentioned
         transport = "SSE" if "messages" not in logs.lower() else "WS"
-        url = f"http://127.0.0.1:{port}/sse" if transport == "SSE" else f"http://127.0.0.1:{port}/messages"
+        url = (
+            f"http://127.0.0.1:{port}/sse"
+            if transport == "SSE"
+            else f"http://127.0.0.1:{port}/messages"
+        )
 
     return {"url": url, "transport": transport, "port": port}
 
 
 def _docker(*args: str, timeout: int = 300) -> subprocess.CompletedProcess:
-    return subprocess.run(["docker", *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=timeout)
+    return subprocess.run(
+        ["docker", *args],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=timeout,
+    )
 
 
 def run_in_container(
     image: str,
-    cmd: List[str] | None,
+    cmd: list[str] | None,
     *,
     cpu: int = 1,
     mem_mb: int = 512,
@@ -96,14 +107,14 @@ def run_in_container(
     Set allow_net=True to keep default networking. In a future revision we can add more granular egress control.
     """
     t0 = time.perf_counter()
-    timings: Dict[str, int] = {}
+    timings: dict[str, int] = {}
     logs_excerpt = ""
-    endpoint_url: Optional[str] = None
-    transport: Optional[str] = None
-    port: Optional[int] = None
+    endpoint_url: str | None = None
+    transport: str | None = None
+    port: int | None = None
     reachable = False
-    error: Optional[str] = None
-    exit_code: Optional[int] = None
+    error: str | None = None
+    exit_code: int | None = None
     tools = []
 
     # 1) Pull (best-effort)
@@ -117,10 +128,14 @@ def run_in_container(
     publish = ["-p", f"{guess_port}:{guess_port}"]
     network = []  # bridge by default (needed to map ports)
     limits = ["--cpus", str(cpu), "--memory", f"{mem_mb}m"]
-    envs: List[str] = ["-e", f"PORT={guess_port}"]
+    envs: list[str] = ["-e", f"PORT={guess_port}"]
 
     run_cmd = [
-        "run", "-d", "--rm", "--name", name,
+        "run",
+        "-d",
+        "--rm",
+        "--name",
+        name,
         *publish,
         *limits,
         *network,
@@ -224,4 +239,3 @@ def run_in_container(
         logs_excerpt=logs_excerpt,
         error=None,
     )
-

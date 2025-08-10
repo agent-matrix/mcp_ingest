@@ -1,7 +1,6 @@
-
 from __future__ import annotations
+
 from pathlib import Path
-from typing import Dict, Optional
 
 from ..utils.io import write_json
 
@@ -14,7 +13,7 @@ def write_server_adapter(
     name: str,
     url: str,
     description: str = "",
-    filename: Optional[str] = None,
+    filename: str | None = None,
 ) -> Path:
     """
     Emit a minimal MatrixHub server adapter stub (pure data file).
@@ -31,7 +30,7 @@ def write_server_adapter(
     p.mkdir(parents=True, exist_ok=True)
     fname = filename or f"{name}-server.adapter.json"
     out = p / fname
-    payload: Dict[str, object] = {
+    payload: dict[str, object] = {
         "type": "server_adapter",
         "name": name,
         "description": description,
@@ -48,7 +47,7 @@ def write_tool_adapter(
     tool_id: str,
     server_url: str,
     description: str = "",
-    filename: Optional[str] = None,
+    filename: str | None = None,
 ) -> Path:
     """
     Emit a minimal MatrixHub tool adapter stub that points to a gateway/server URL.
@@ -66,7 +65,7 @@ def write_tool_adapter(
     p.mkdir(parents=True, exist_ok=True)
     fname = filename or f"{name}-tool.adapter.json"
     out = p / fname
-    payload: Dict[str, object] = {
+    payload: dict[str, object] = {
         "type": "tool_adapter",
         "name": name,
         "description": description,
@@ -75,4 +74,3 @@ def write_tool_adapter(
     }
     write_json(out, payload)
     return out
-

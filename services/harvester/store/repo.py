@@ -1,9 +1,10 @@
 from __future__ import annotations
+
 import hashlib
 from pathlib import Path
-from typing import Optional
 
 ARTIFACT_ROOT = Path("harvester_artifacts").resolve()
+
 
 def _ext_for_kind(kind: str) -> str:
     k = (kind or "").lower()
@@ -12,6 +13,7 @@ def _ext_for_kind(kind: str) -> str:
     if k == "log":
         return ".log"
     return ".bin"
+
 
 def put_artifact(job_id: str, kind: str, data: bytes) -> str:
     """Write artifact bytes to disk with content-hash name; return file:// URI."""
@@ -23,10 +25,12 @@ def put_artifact(job_id: str, kind: str, data: bytes) -> str:
     path.write_bytes(data)
     return f"file://{path}"
 
+
 def open_artifact(uri: str) -> bytes:
     assert uri.startswith("file://")
     path = Path(uri.replace("file://", "")).resolve()
     return path.read_bytes()
+
 
 def manifest_link(uri: str) -> str:
     # For now, pass-through; later map to CDN/S3 links.

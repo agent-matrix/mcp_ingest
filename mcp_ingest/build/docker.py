@@ -1,9 +1,10 @@
-
 from __future__ import annotations
-import hashlib, os, shutil, subprocess, tempfile, time
-from dataclasses import dataclass, asdict
+
+import hashlib
+import subprocess
+import time
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Dict, Optional
 
 __all__ = ["BuildResult", "build_image", "tag_image"]
 
@@ -21,10 +22,10 @@ def _hash_path(path: Path) -> str:
 @dataclass
 class BuildResult:
     success: bool
-    image_ref: Optional[str]
-    digest: Optional[str]
+    image_ref: str | None
+    digest: str | None
     logs: str
-    labels: Dict[str, str]
+    labels: dict[str, str]
 
     def to_dict(self):
         d = asdict(self)
@@ -32,8 +33,15 @@ class BuildResult:
         return d
 
 
-def _run(cmd, *, cwd: Optional[Path] = None, timeout: int = 1800) -> subprocess.CompletedProcess:
-    return subprocess.run(cmd, cwd=str(cwd) if cwd else None, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=timeout)
+def _run(cmd, *, cwd: Path | None = None, timeout: int = 1800) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        cmd,
+        cwd=str(cwd) if cwd else None,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=timeout,
+    )
 
 
 def build_image(
@@ -43,7 +51,7 @@ def build_image(
     lockfile: str | None = None,
     strategy: str = "dockerfile",
     image_name: str | None = None,
-    labels: Dict[str, str] | None = None,
+    labels: dict[str, str] | None = None,
 ) -> BuildResult:
     """Build an OCI image for the given source directory.
 
@@ -61,7 +69,7 @@ def build_image(
     }
 
     # Guess a name from folder if not provided
-    name = image_name or f"mcp-{src.name.lower().replace("_","-")}"
+    name = image_name or f"mcp-{src.name.lower().replace('_', '-')}"
 
     # Create a temporary Dockerfile
     df = f"""
@@ -79,7 +87,7 @@ RUN python -m pip install --upgrade pip \\
     else echo "No requirements found; skipping"; fi
 EXPOSE 6288
 # Default command is a no-op; caller provides CMD at runtime for validation
-CMD ["python", "-c", "print(image built; provide CMD at run time)"]
+CMD ["python", "-c", "print('image built; provide CMD at run time')"]
 """
 
     # Build context = src; use stdin Dockerfile
@@ -91,12 +99,17 @@ CMD ["python", "-c", "print(image built; provide CMD at run time)"]
         # We need to pipe the Dockerfile content to the docker build command
         proc = subprocess.run(
             ["docker", "build", "-f", "-", "-t", name, *lbl_flags, str(src)],
-            input=df, text=True, capture_output=True, check=True
+            input=df,
+            text=True,
+            capture_output=True,
+            check=True,
         )
         logs = proc.stdout + "\n" + proc.stderr
 
         # Inspect image ID / digest
-        inspect = _run(["docker", "images", "--no-trunc", "--format", "{{.Repository}}:{{.Tag}} {{.ID}}", name])
+        inspect = _run(
+            ["docker", "images", "--no-trunc", "--format", "{{.Repository}}:{{.Tag}} {{.ID}}", name]
+        )
         img_line = inspect.stdout.strip().splitlines()[:1]
         digest = None
         if img_line:
@@ -126,5 +139,5 @@ def tag_image(digest: str, tag: str) -> str:
         _run(["docker", "tag", digest, tag])
         return tag
     except Exception as e:  # pragma: no cover
-        raise RuntimeError(str(e))
-
+        # FIX: Chain the exception to preserve the original traceback.
+        raise RuntimeError(str(e)) from e

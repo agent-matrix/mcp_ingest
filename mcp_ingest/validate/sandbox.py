@@ -1,12 +1,10 @@
-
 from __future__ import annotations
+
 import os
-import platform
 import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
 
 __all__ = ["SandboxResult", "run_process"]
 
@@ -14,7 +12,7 @@ __all__ = ["SandboxResult", "run_process"]
 @dataclass
 class SandboxResult:
     ok: bool
-    returncode: Optional[int]
+    returncode: int | None
     elapsed_secs: float
     stdout: str
     stderr: str
@@ -24,12 +22,13 @@ class SandboxResult:
 _def_env = os.environ.copy()
 
 
-def _set_limits(mem_limit_mb: Optional[int]) -> None:  # pragma: no cover - platform specific
+def _set_limits(mem_limit_mb: int | None) -> None:  # pragma: no cover - platform specific
     """best-effort memory limiter for POSIX via resource.setrlimit."""
     if mem_limit_mb is None:
         return
     try:
         import resource  # type: ignore
+
         soft = mem_limit_mb * 1024 * 1024
         hard = soft
         # address space
@@ -42,12 +41,12 @@ def _set_limits(mem_limit_mb: Optional[int]) -> None:  # pragma: no cover - plat
 
 
 def run_process(
-    cmd: List[str],
+    cmd: list[str],
     *,
     timeout: int = 30,
     cwd: str | Path | None = None,
-    env: Optional[Dict[str, str]] = None,
-    mem_limit_mb: Optional[int] = None,
+    env: dict[str, str] | None = None,
+    mem_limit_mb: int | None = None,
 ) -> SandboxResult:
     """Run a local process with optional time/memory limits and capture logs.
 
@@ -59,7 +58,7 @@ def run_process(
     try:
         preexec = None
         if os.name == "posix":  # only POSIX supports preexec_fn
-            preexec = (lambda: _set_limits(mem_limit_mb))
+            preexec = lambda: _set_limits(mem_limit_mb)
         p = subprocess.Popen(
             cmd,
             cwd=str(cwd) if cwd else None,
@@ -104,4 +103,3 @@ def run_process(
             stderr=str(e),
             timed_out=False,
         )
-

@@ -1,8 +1,10 @@
 from __future__ import annotations
-import json, os, shutil, subprocess, time
-from dataclasses import dataclass
+
+import json
+import shutil
+import subprocess
+import time
 from pathlib import Path
-from typing import Dict, List, Optional
 
 __all__ = [
     "generate_sbom_for_source",
@@ -13,21 +15,32 @@ __all__ = [
 
 # --- common helpers --------------------------------------------------------
 
+
 def _ts() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
-def _run(cmd: list[str], cwd: Optional[Path] = None, timeout: int = 600) -> subprocess.CompletedProcess:
-    return subprocess.run(cmd, cwd=str(cwd) if cwd else None, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=timeout)
+def _run(
+    cmd: list[str], cwd: Path | None = None, timeout: int = 600
+) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        cmd,
+        cwd=str(cwd) if cwd else None,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=timeout,
+    )
 
 
 # --- SBOM for source (CycloneDX-like minimal JSON) ------------------------
 
-def _pip_freeze(cwd: Path) -> List[Dict[str, str]]:
+
+def _pip_freeze(cwd: Path) -> list[dict[str, str]]:
     try:
         p = _run(["python", "-m", "pip", "freeze"], cwd=cwd, timeout=120)
         if p.returncode == 0:
-            out: List[Dict[str, str]] = []
+            out: list[dict[str, str]] = []
             for line in (p.stdout or "").splitlines():
                 if "==" in line:
                     name, ver = line.strip().split("==", 1)
@@ -48,7 +61,7 @@ def generate_sbom_for_source(source: str, *, out_path: str | Path | None = None)
     if not src.exists():
         raise FileNotFoundError(f"source not found: {src}")
 
-    components: List[Dict[str, str]] = []
+    components: list[dict[str, str]] = []
     req = src / "requirements.txt"
     if req.exists():
         for line in req.read_text(encoding="utf-8").splitlines():
@@ -81,7 +94,8 @@ def generate_sbom_for_source(source: str, *, out_path: str | Path | None = None)
 
 # --- SBOM for image (syft if available; minimal fallback) -----------------
 
-def _which(prog: str) -> Optional[str]:
+
+def _which(prog: str) -> str | None:
     return shutil.which(prog)
 
 
@@ -112,7 +126,8 @@ def generate_sbom_for_image(image_ref: str, *, out_path: str | Path | None = Non
 
 # --- Provenance (SLSA-like minimal doc) -----------------------------------
 
-def emit_provenance(meta: Dict[str, object], *, out_path: str | Path | None = None) -> Path:
+
+def emit_provenance(meta: dict[str, object], *, out_path: str | Path | None = None) -> Path:
     """Emit a minimal provenance/attestation JSON file.
 
     Includes generator, build digest, commit sha, timestamps, and arbitrary metadata.

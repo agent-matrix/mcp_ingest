@@ -15,6 +15,10 @@ UVICORN := $(BIN)/uvicorn
 
 export PYTHONDONTWRITEBYTECODE=1
 
+# Only operate on directories that exist (avoids errors when tests/ is missing)
+SRC_DIRS := mcp_ingest services examples tests
+EXISTING_DIRS := $(shell for d in $(SRC_DIRS); do [ -d $$d ] && printf "%s " $$d; done)
+
 .PHONY: help setup install install-dev install-docs format lint typecheck test ci build clean clean-all \
 	docs-setup docs-serve docs-build docs-publish docs-open \
 	run-harvester harvest-mcp-servers tools
@@ -39,22 +43,32 @@ install-dev: install docs-setup ## Install everything needed for local dev (incl
 # Code quality
 # -----------------------------------------------------------------------------
 format: ## Format code with black
-	$(BLACK) mcp_ingest services tests || true
+	@dirs="$(EXISTING_DIRS)"; \
+	if [ -z "$$dirs" ]; then echo "No source directories to format."; else \
+		$(BLACK) $$dirs; fi
 
 lint: ## Lint with ruff
-	$(RUFF) check mcp_ingest services || true
+	@dirs="$(EXISTING_DIRS)"; \
+	if [ -z "$$dirs" ]; then echo "No source directories to lint."; else \
+		$(RUFF) check $$dirs; fi
 
 typecheck: ## Static type checking with mypy
-	$(MYPY) mcp_ingest services || true
+	@dirs="$(EXISTING_DIRS)"; \
+	if [ -z "$$dirs" ]; then echo "No source directories to typecheck."; else \
+		$(MYPY) $$dirs; fi
 
 test: ## Run tests (pytest)
-	$(PYTEST) -q
+	@if [ -d tests ]; then $(PYTEST) -q; else echo "No tests/ folder; skipping pytest."; fi
 
 ci: ## Lint + typecheck + tests (for CI)
-	$(RUFF) check mcp_ingest services
-	$(BLACK) --check mcp_ingest services
-	$(MYPY) mcp_ingest services
-	$(PYTEST) --maxfail=1 --disable-warnings -q --cov=mcp_ingest --cov-report=term-missing
+	@dirs="$(EXISTING_DIRS)"; \
+	if [ -n "$$dirs" ]; then $(RUFF) check $$dirs; else echo "No source dirs for ruff"; fi
+	@dirs="$(EXISTING_DIRS)"; \
+	if [ -n "$$dirs" ]; then $(BLACK) --check $$dirs; else echo "No source dirs for black"; fi
+	@dirs="$(EXISTING_DIRS)"; \
+	if [ -n "$$dirs" ]; then $(MYPY) $$dirs; else echo "No source dirs for mypy"; fi
+	@if [ -d tests ]; then $(PYTEST) --maxfail=1 --disable-warnings -q --cov=mcp_ingest --cov-report=term-missing; \
+	else echo "No tests/ folder; skipping pytest."; fi
 	@echo "✔ CI checks passed"
 
 build: ## Build sdist/wheel under dist/

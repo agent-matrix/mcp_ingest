@@ -1,24 +1,23 @@
-
 from __future__ import annotations
-from pathlib import Path
+
 import re
-from typing import List
+from pathlib import Path
 
 from .base import DetectReport
 
 __all__ = ["detect_path"]
 
 
-_SSE_HINTS = ("/sse", "transport=\"sse\"", "transport=sse")
-_MSG_HINTS = ("/messages", "transport=\"sse\" and /messages")
+_SSE_HINTS = ("/sse", 'transport="sse"', "transport=sse")
+_MSG_HINTS = ("/messages", 'transport="sse" and /messages')
 _PORT_HINTS = re.compile(r"(?i)(PORT\s*=\s*(\d{3,5}))|(host=\"127\.0\.0\.1\",\s*port=(\d{3,5}))")
 
 
-def _candidate_files(root: Path) -> List[Path]:
+def _candidate_files(root: Path) -> list[Path]:
     if root.is_file():
         return [root] if root.suffix == ".py" else []
     names = {"server.py", "app.py", "main.py"}
-    out: List[Path] = []
+    out: list[Path] = []
     for p in root.rglob("*.py"):
         if p.name in names or "/server/" in str(p.as_posix()):
             out.append(p)
@@ -72,14 +71,15 @@ def detect_path(source: str) -> DetectReport:
     report.server_url = f"http://127.0.0.1:{port}{route}"
 
     # resource pointer
-    report.resources.append({
-        "id": f"{chosen.stem}-source",
-        "name": "server source",
-        "type": "inline",
-        "uri": f"file://{chosen.name}",
-    })
+    report.resources.append(
+        {
+            "id": f"{chosen.stem}-source",
+            "name": "server source",
+            "type": "inline",
+            "uri": f"file://{chosen.name}",
+        }
+    )
 
     report.notes.append(f"heuristic route={route}; port={port}; file={chosen.name}")
     report.confidence = max(report.confidence, 0.3)
     return report
-

@@ -1,11 +1,10 @@
 from __future__ import annotations
-import ast
-import re
-from pathlib import Path
-from typing import Any, Dict, List, Optional
 
-from .base import DetectReport
+import ast
+from pathlib import Path
+
 from ..utils.jsonschema import infer_schema_from_ast_func
+from .base import DetectReport
 
 __all__ = ["detect_path"]
 
@@ -24,7 +23,7 @@ _PROMPT_FILE_PATTERNS = (
 )
 
 
-def _walk_py(root: Path) -> List[Path]:
+def _walk_py(root: Path) -> list[Path]:
     if root.is_file() and root.suffix == ".py":
         return [root]
     return [p for p in root.rglob("*.py") if p.is_file()]
@@ -32,11 +31,13 @@ def _walk_py(root: Path) -> List[Path]:
 
 def _is_sk_file(text: str) -> bool:
     t = text
-    return any(h in t for h in _SK_IMPORT_HINTS) or "@kernel_function" in t or "@skill_function" in t
+    return (
+        any(h in t for h in _SK_IMPORT_HINTS) or "@kernel_function" in t or "@skill_function" in t
+    )
 
 
-def _decorator_names(fn: ast.FunctionDef) -> List[str]:
-    out: List[str] = []
+def _decorator_names(fn: ast.FunctionDef) -> list[str]:
+    out: list[str] = []
     for d in fn.decorator_list:
         if isinstance(d, ast.Name):
             out.append(d.id)
@@ -46,10 +47,10 @@ def _decorator_names(fn: ast.FunctionDef) -> List[str]:
     return out
 
 
-def _extract_kernel_function_meta(deco: ast.AST) -> Dict[str, Optional[str]]:
+def _extract_kernel_function_meta(deco: ast.AST) -> dict[str, str | None]:
     """Return {name, description} if present in a kernel_function/skill_function decorator."""
-    name: Optional[str] = None
-    desc: Optional[str] = None
+    name: str | None = None
+    desc: str | None = None
 
     if isinstance(deco, ast.Call):
         # kernel_function("mytool", description="...") or kernel_function(name="...")
@@ -60,9 +61,17 @@ def _extract_kernel_function_meta(deco: ast.AST) -> Dict[str, Optional[str]]:
                 if isinstance(a0, ast.Constant) and isinstance(a0.value, str):
                     name = a0.value
             for kw in deco.keywords or []:
-                if kw.arg == "name" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                if (
+                    kw.arg == "name"
+                    and isinstance(kw.value, ast.Constant)
+                    and isinstance(kw.value.value, str)
+                ):
                     name = kw.value.value
-                if kw.arg == "description" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                if (
+                    kw.arg == "description"
+                    and isinstance(kw.value, ast.Constant)
+                    and isinstance(kw.value.value, str)
+                ):
                     desc = kw.value.value
         elif isinstance(deco.func, ast.Attribute) and deco.func.attr in _SK_DECORATORS:
             # semantic_kernel.functions.kernel_function(...)
@@ -71,18 +80,26 @@ def _extract_kernel_function_meta(deco: ast.AST) -> Dict[str, Optional[str]]:
                 if isinstance(a0, ast.Constant) and isinstance(a0.value, str):
                     name = a0.value
             for kw in deco.keywords or []:
-                if kw.arg == "name" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                if (
+                    kw.arg == "name"
+                    and isinstance(kw.value, ast.Constant)
+                    and isinstance(kw.value.value, str)
+                ):
                     name = kw.value.value
-                if kw.arg == "description" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                if (
+                    kw.arg == "description"
+                    and isinstance(kw.value, ast.Constant)
+                    and isinstance(kw.value.value, str)
+                ):
                     desc = kw.value.value
     return {"name": name, "description": desc}
 
 
-def _find_prompt_files(root: Path, limit: int = 50) -> List[Path]:
+def _find_prompt_files(root: Path, limit: int = 50) -> list[Path]:
     """Search a few common prompt file names used by SK skills/plugins.
     Limits results to keep the detector fast.
     """
-    results: List[Path] = []
+    results: list[Path] = []
     for pat in _PROMPT_FILE_PATTERNS:
         for p in root.rglob(f"**/*{pat}"):
             results.append(p)
@@ -108,7 +125,7 @@ def detect_path(source: str) -> DetectReport:
         return rep
 
     # First pass: collect SK hints quickly for confidence baseline
-    sk_suspects: List[Path] = []
+    sk_suspects: list[Path] = []
     for f in files:
         try:
             text = f.read_text(encoding="utf-8", errors="ignore")
@@ -132,8 +149,8 @@ def detect_path(source: str) -> DetectReport:
                 decs = _decorator_names(node)
                 if any(d in _SK_DECORATORS for d in decs):
                     # Try to extract tool name/description from the exact decorator call
-                    tool_name: Optional[str] = None
-                    tool_desc: Optional[str] = None
+                    tool_name: str | None = None
+                    tool_desc: str | None = None
                     for d in node.decorator_list:
                         meta = _extract_kernel_function_meta(d)
                         tool_name = tool_name or meta.get("name")
@@ -142,31 +159,37 @@ def detect_path(source: str) -> DetectReport:
                     # Fall back to function name
                     tname = (tool_name or node.name).replace("_", "-")
                     schema = infer_schema_from_ast_func(node)
-                    rep.tools.append({
-                        "id": tname,
-                        "name": tname,
-                        "description": tool_desc or "",
-                        "input_schema": schema,
-                    })
+                    rep.tools.append(
+                        {
+                            "id": tname,
+                            "name": tname,
+                            "description": tool_desc or "",
+                            "input_schema": schema,
+                        }
+                    )
                     rep.confidence = max(rep.confidence, 0.7)
 
         # If this file looks very SK-centric, add as resource pointer
         if f.name in {"plugins.py", "skills.py", "server.py"}:
-            rep.resources.append({
-                "id": f"{f.stem}-source",
-                "name": "server/skills source",
-                "type": "inline",
-                "uri": f"file://{f.name}",
-            })
+            rep.resources.append(
+                {
+                    "id": f"{f.stem}-source",
+                    "name": "server/skills source",
+                    "type": "inline",
+                    "uri": f"file://{f.name}",
+                }
+            )
 
     # Prompt/resource sweep (best-effort)
     prompts = _find_prompt_files(root)
     for p in prompts[:25]:  # cap
-        rep.prompts.append({
-            "id": p.stem,
-            "name": p.name,
-            "uri": f"file://{p.as_posix()}",
-        })
+        rep.prompts.append(
+            {
+                "id": p.stem,
+                "name": p.name,
+                "uri": f"file://{p.as_posix()}",
+            }
+        )
     if prompts:
         rep.notes.append(f"found {len(prompts)} potential SK prompt files")
         rep.confidence = max(rep.confidence, 0.6)
@@ -177,4 +200,3 @@ def detect_path(source: str) -> DetectReport:
         rep.confidence = max(rep.confidence, 0.75)
 
     return rep
-

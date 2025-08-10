@@ -14,15 +14,15 @@ mode=="harvest_repo" (it does in our Stage-2 edits).
 """
 
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from ..store.models import get_session, Job
+from ..store.models import Job, get_session
 from .jobs import get_queue  # reuse the same in-memory queue helper
 
-router = APIRouter(prefix="/harvest", tags=["harvest"]) 
+router = APIRouter(prefix="/harvest", tags=["harvest"])
 
 
 class JobId(BaseModel):
@@ -31,7 +31,7 @@ class JobId(BaseModel):
 
 class HarvestRepoRequest(BaseModel):
     source: str = Field(..., description="git URL, zip URL, or local path")
-    options: Dict[str, Any] = Field(
+    options: dict[str, Any] = Field(
         default_factory=dict,
         description=(
             "Optional job options, e.g. {build: 'docker', validate: 'light', "
@@ -67,12 +67,14 @@ def harvest_repo(req: HarvestRepoRequest) -> JobId:
 
         # Enqueue for the background worker
         queue = get_queue()
-        queue.enqueue({
-            "id": job.id,
-            "mode": job.mode,
-            "source": job.source,
-            "options": job.options or {},
-        })
+        queue.enqueue(
+            {
+                "id": job.id,
+                "mode": job.mode,
+                "source": job.source,
+                "options": job.options or {},
+            }
+        )
 
         return JobId(id=job.id)
     finally:

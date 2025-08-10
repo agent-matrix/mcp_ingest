@@ -1,5 +1,5 @@
-
 from __future__ import annotations
+
 import json
 from pathlib import Path
 from typing import Any
@@ -33,5 +33,5 @@ def write_json(path: str | Path, data: dict[str, Any]) -> None:
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
 
-__all__ = ["read_text", "read_json_or_yaml", "write_json"]
 
+__all__ = ["read_text", "read_json_or_yaml", "write_json"]

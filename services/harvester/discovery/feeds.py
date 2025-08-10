@@ -1,14 +1,16 @@
 from __future__ import annotations
-from pathlib import Path
-from typing import List, Any
+
 import json
+from pathlib import Path
+from typing import Any
 
 try:
     import yaml  # type: ignore
 except Exception:
     yaml = None  # type: ignore
 
-def load_feeds(path: str | Path) -> List[str]:
+
+def load_feeds(path: str | Path) -> list[str]:
     """Load curated JSON/YAML list of sources (git URLs, manifest URLs, folders)."""
     p = Path(path).expanduser().resolve()
     text = p.read_text(encoding="utf-8")

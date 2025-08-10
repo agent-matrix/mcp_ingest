@@ -1,11 +1,10 @@
-
 from __future__ import annotations
+
 import ast
 from pathlib import Path
-from typing import Any, Dict, List, Optional
 
-from .base import DetectReport
 from ..utils.jsonschema import infer_schema_from_ast_func
+from .base import DetectReport
 
 __all__ = ["detect_path"]
 
@@ -28,7 +27,7 @@ _LI_AGENT_NAMES = {
 }
 
 
-def _walk_py(root: Path) -> List[Path]:
+def _walk_py(root: Path) -> list[Path]:
     if root.is_file() and root.suffix == ".py":
         return [root]
     return [p for p in root.rglob("*.py") if p.is_file()]
@@ -42,8 +41,8 @@ def _call_name(node: ast.AST) -> str:
     return ""
 
 
-def _collect_functions(tree: ast.AST) -> Dict[str, ast.FunctionDef]:
-    out: Dict[str, ast.FunctionDef] = {}
+def _collect_functions(tree: ast.AST) -> dict[str, ast.FunctionDef]:
+    out: dict[str, ast.FunctionDef] = {}
     for n in ast.walk(tree):
         if isinstance(n, ast.FunctionDef):
             out[n.name] = n
@@ -80,7 +79,10 @@ def detect_path(source: str) -> DetectReport:
 
         # Note: ServiceContext/Settings discovery (adds confidence)
         for node in ast.walk(tree):
-            if isinstance(node, ast.Call) and _call_name(node.func) in {"ServiceContext", "Settings"}:
+            if isinstance(node, ast.Call) and _call_name(node.func) in {
+                "ServiceContext",
+                "Settings",
+            }:
                 rep.notes.append(f"llamaindex config: {_call_name(node.func)} in {f.name}")
                 rep.confidence = max(rep.confidence, 0.55)
 
@@ -95,10 +97,14 @@ def detect_path(source: str) -> DetectReport:
                     # e.g., tools.FunctionTool.from_defaults
                     if getattr(base, "attr", None) != "FunctionTool":
                         continue
-                tool_name: Optional[str] = None
-                fn_name: Optional[str] = None
+                tool_name: str | None = None
+                fn_name: str | None = None
                 for kw in getattr(node, "keywords", []) or []:
-                    if kw.arg == "name" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                    if (
+                        kw.arg == "name"
+                        and isinstance(kw.value, ast.Constant)
+                        and isinstance(kw.value.value, str)
+                    ):
                         tool_name = kw.value.value
                     if kw.arg in {"fn", "func"} and isinstance(kw.value, ast.Name):
                         fn_name = kw.value.id
@@ -115,7 +121,11 @@ def detect_path(source: str) -> DetectReport:
             if isinstance(node, ast.Call) and _call_name(node.func) == "QueryEngineTool":
                 tname = None
                 for kw in getattr(node, "keywords", []) or []:
-                    if kw.arg == "name" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                    if (
+                        kw.arg == "name"
+                        and isinstance(kw.value, ast.Constant)
+                        and isinstance(kw.value.value, str)
+                    ):
                         tname = kw.value.value
                         break
                 if tname:
@@ -131,7 +141,9 @@ def detect_path(source: str) -> DetectReport:
                 if isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
                     s = node.value.value
                     if len(s) >= 20:
-                        rep.prompts.append({"id": f"{f.stem}-prompt", "name": "prompt", "text": s[:200]})
+                        rep.prompts.append(
+                            {"id": f"{f.stem}-prompt", "name": "prompt", "text": s[:200]}
+                        )
                         rep.confidence = max(rep.confidence, 0.6)
 
         # Agent construct hints
@@ -142,14 +154,15 @@ def detect_path(source: str) -> DetectReport:
 
         # Source pointer as a resource
         if f.name in {"server.py", "app.py", "main.py"}:
-            rep.resources.append({
-                "id": f"{f.stem}-source",
-                "name": "server source",
-                "type": "inline",
-                "uri": f"file://{f.name}",
-            })
+            rep.resources.append(
+                {
+                    "id": f"{f.stem}-source",
+                    "name": "server source",
+                    "type": "inline",
+                    "uri": f"file://{f.name}",
+                }
+            )
 
     if rep.tools or rep.prompts:
         rep.notes.append("framework: llamaindex")
     return rep
-

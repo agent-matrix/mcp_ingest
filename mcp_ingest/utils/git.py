@@ -20,14 +20,12 @@ Design notes
 This module is dependency-light and compatible with MatrixHub tooling.
 """
 
-from dataclasses import dataclass
-import os
 import re
 import shutil
 import subprocess
 import tempfile
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable, Optional
 
 try:  # optional; used for ZIP fallback
     import httpx  # type: ignore
@@ -53,7 +51,9 @@ def _is_commit(ref: str | None) -> bool:
     return bool(ref and _HEX_RE.match(ref))
 
 
-def _run_git(args: Iterable[str], *, cwd: Path | None = None, timeout: int = 600) -> subprocess.CompletedProcess:
+def _run_git(
+    args: Iterable[str], *, cwd: Path | None = None, timeout: int = 600
+) -> subprocess.CompletedProcess:
     if shutil.which("git") is None:
         raise GitError("git is not installed or not in PATH")
     try:
@@ -100,7 +100,9 @@ def _github_owner_repo(url: str) -> tuple[str, str] | None:
     return owner, repo
 
 
-def _zip_fallback(url: str, dest: Path, ref: str | None, *, timeout: int = 600, max_mb: int = 500) -> str:
+def _zip_fallback(
+    url: str, dest: Path, ref: str | None, *, timeout: int = 600, max_mb: int = 500
+) -> str:
     """Download and extract a GitHub ZIP archive into `dest`.
 
     Returns "" (empty string) as SHA when the exact commit is unknown.
@@ -155,7 +157,9 @@ def _zip_fallback(url: str, dest: Path, ref: str | None, *, timeout: int = 600, 
                     else:
                         shutil.move(str(p), str(target))
 
-                return ""  # SHA unknown in fallback (could be captured from file list, but optional)
+                return (
+                    ""  # SHA unknown in fallback (could be captured from file list, but optional)
+                )
             except Exception as e:  # try next candidate
                 last_err = e
                 continue
@@ -208,7 +212,9 @@ def clone_shallow(url: str, dest: str | Path, ref: str | None = None, *, timeout
             proc = _run_git(["remote", "add", "origin", url], cwd=dest_path, timeout=timeout)
             if proc.returncode != 0:
                 raise GitError(proc.stderr.strip() or "git remote add failed")
-            proc = _run_git(["fetch", "--depth", "1", "origin", ref], cwd=dest_path, timeout=timeout)
+            proc = _run_git(
+                ["fetch", "--depth", "1", "origin", ref], cwd=dest_path, timeout=timeout
+            )
             if proc.returncode != 0:
                 raise GitError(proc.stderr.strip() or f"git fetch failed for {ref}")
             proc = _run_git(["checkout", "FETCH_HEAD"], cwd=dest_path, timeout=timeout)
@@ -231,7 +237,7 @@ def clone_shallow(url: str, dest: str | Path, ref: str | None = None, *, timeout
         sha = proc.stdout.strip()
         return sha
 
-    except GitError as ge:
+    except GitError:
         # Try ZIP fallback if GitHub
         gh = _github_owner_repo(url)
         if gh is None:

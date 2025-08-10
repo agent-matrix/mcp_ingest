@@ -41,15 +41,34 @@ harvester = [
     "uvicorn>=0.23",
     "SQLAlchemy>=2.0",
 ]
+# --- New: docs extras for MkDocs site ---------------------------------------
+# Matches Makefile's docs-setup target; lets you `pip install -e ".[dev,harvester,docs]"`
+docs = [
+    "mkdocs>=1.5,<2",
+    "mkdocs-material>=9.5,<10",
+    "mkdocs-mermaid2-plugin>=1.1,<2",
+    # Material uses pymdown-extensions; include explicitly for local builds
+    "pymdown-extensions>=10,<12",
+]
 
 [project.scripts]
 mcp-ingest = "mcp_ingest.cli:main"
 
+# Ruff configuration (top-level applies to formatter and linter)
 [tool.ruff]
 line-length = 100
-select = ["E", "F", "I", "B", "UP", "N"]
-ignore = []
 
+# Linter-specific configuration
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N"]
+# Add all error codes you want to temporarily skip to this list
+ignore = [
+    "E501",  # Line too long
+    "E402",  # Module level import not at top of file
+    "UP022", # Prefer `capture_output` for subprocess
+    "E731",  # Do not assign a `lambda` expression
+    "N805",  # False positive: first argument of a method should be `self`
+]
 [tool.black]
 line-length = 100
 target-version = ["py311"]

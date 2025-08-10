@@ -1,23 +1,22 @@
 from __future__ import annotations
+
 import json
-import shlex
 import subprocess
 import tempfile
-import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
-from ..store.models import get_session, Job, Artifact
-from ..store.repo import put_artifact
-from ..discovery.scoring import score_entry
 from ..clients.hub_client import HubClient
+from ..discovery.scoring import score_entry
+from ..store.models import Artifact, Job, get_session
+from ..store.repo import put_artifact
 
 AUTO_REGISTER_THRESHOLD = 0.8
 MATRIXHUB_URL = "http://127.0.0.1:7300"
 
 
-def _run(cmd: list[str], *, cwd: Path | None = None, timeout: int = 900) -> Tuple[int, str, str]:
+def _run(cmd: list[str], *, cwd: Path | None = None, timeout: int = 900) -> tuple[int, str, str]:
     """Run a subprocess with a wall-clock timeout, capturing stdout/stderr."""
     p = subprocess.Popen(
         cmd,
@@ -35,7 +34,7 @@ def _run(cmd: list[str], *, cwd: Path | None = None, timeout: int = 900) -> Tupl
         return -1, out or "", (err or "") + "\n[timeout]"
 
 
-def _persist_file(job_id: str, kind: str, path: Path) -> Optional[str]:
+def _persist_file(job_id: str, kind: str, path: Path) -> str | None:
     if not path.exists():
         return None
     b = path.read_bytes()
@@ -56,12 +55,12 @@ def _safe_json_load(s: str) -> dict:
         return {}
 
 
-def _auto_register_if_high(score: float, manifest_path: Optional[Path]) -> None:
+def _auto_register_if_high(score: float, manifest_path: Path | None) -> None:
     if score < AUTO_REGISTER_THRESHOLD or not manifest_path or not manifest_path.exists():
         return
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        entity_uid = f"{manifest.get('type','mcp_server')}:{manifest.get('id')}@{manifest.get('version','0.1.0')}"
+        entity_uid = f"{manifest.get('type', 'mcp_server')}:{manifest.get('id')}@{manifest.get('version', '0.1.0')}"
         client = HubClient(MATRIXHUB_URL)
         client.install_manifest(entity_uid=entity_uid, target="./", manifest=manifest)
     except Exception:
@@ -69,7 +68,7 @@ def _auto_register_if_high(score: float, manifest_path: Optional[Path]) -> None:
         pass
 
 
-def execute_job(job_id: str, payload: Dict[str, Any]) -> None:
+def execute_job(job_id: str, payload: dict[str, Any]) -> None:
     """
     Execute a harvesting or packing job.
 
@@ -137,7 +136,11 @@ def execute_job(job_id: str, payload: Dict[str, Any]) -> None:
                 if ip.exists():
                     ibytes = ip.read_bytes()
                     i_uri = put_artifact(job.id, "index", ibytes)
-                    db.add(Artifact(job_id=job.id, kind="index", uri=i_uri, digest=None, bytes=len(ibytes)))
+                    db.add(
+                        Artifact(
+                            job_id=job.id, kind="index", uri=i_uri, digest=None, bytes=len(ibytes)
+                        )
+                    )
 
             # Persist all manifests
             stored = 0
@@ -147,7 +150,11 @@ def execute_job(job_id: str, payload: Dict[str, Any]) -> None:
                     continue
                 mbytes = p.read_bytes()
                 m_uri = put_artifact(job.id, "manifest", mbytes)
-                db.add(Artifact(job_id=job.id, kind="manifest", uri=m_uri, digest=None, bytes=len(mbytes)))
+                db.add(
+                    Artifact(
+                        job_id=job.id, kind="manifest", uri=m_uri, digest=None, bytes=len(mbytes)
+                    )
+                )
                 stored += 1
 
             # Score (lightweight): if manifests produced, assign a baseline; higher if summary says validated
@@ -168,7 +175,14 @@ def execute_job(job_id: str, payload: Dict[str, Any]) -> None:
             if options.get("auto_register_top") and repo_index:
                 try:
                     # pick first manifest path for auto-register attempt
-                    first_path = next((Path(str(mp)).expanduser().resolve() for mp in manifest_paths if Path(str(mp)).exists()), None)
+                    first_path = next(
+                        (
+                            Path(str(mp)).expanduser().resolve()
+                            for mp in manifest_paths
+                            if Path(str(mp)).exists()
+                        ),
+                        None,
+                    )
                     _auto_register_if_high(score, first_path)
                 except Exception:
                     pass
@@ -196,11 +210,10 @@ def execute_job(job_id: str, payload: Dict[str, Any]) -> None:
             db.commit()
             return
 
-        result: Dict[str, Any] = _safe_json_load(out)
-        manifest_path: Optional[str] = None
-        manifest_path = (
-            result.get("describe", {}).get("manifest_path")
-            or result.get("manifest_path")
+        result: dict[str, Any] = _safe_json_load(out)
+        manifest_path: str | None = None
+        manifest_path = result.get("describe", {}).get("manifest_path") or result.get(
+            "manifest_path"
         )
 
         if manifest_path:
@@ -208,7 +221,11 @@ def execute_job(job_id: str, payload: Dict[str, Any]) -> None:
             if mp.exists():
                 mbytes = mp.read_bytes()
                 m_uri = put_artifact(job.id, "manifest", mbytes)
-                db.add(Artifact(job_id=job.id, kind="manifest", uri=m_uri, digest=None, bytes=len(mbytes)))
+                db.add(
+                    Artifact(
+                        job_id=job.id, kind="manifest", uri=m_uri, digest=None, bytes=len(mbytes)
+                    )
+                )
 
         # Optional index
         ip = Path(outdir / "index.json")
@@ -218,12 +235,20 @@ def execute_job(job_id: str, payload: Dict[str, Any]) -> None:
             db.add(Artifact(job_id=job.id, kind="index", uri=i_uri, digest=None, bytes=len(ibytes)))
 
         # Compute score (detect+validation best-effort)
-        detect_report = result.get("detected", {}).get("report") if "detected" in result else result.get("report")
+        detect_report = (
+            result.get("detected", {}).get("report")
+            if "detected" in result
+            else result.get("report")
+        )
         validation = result.get("register", {}) if "register" in result else {}
-        score = score_entry(repo_metrics=None, detect_report=detect_report or {}, validation=validation or {})
+        score = score_entry(
+            repo_metrics=None, detect_report=detect_report or {}, validation=validation or {}
+        )
 
         job.confidence = score
-        job.frameworks = ",".join(detect_report.get("frameworks", [])) if isinstance(detect_report, dict) else ""
+        job.frameworks = (
+            ",".join(detect_report.get("frameworks", [])) if isinstance(detect_report, dict) else ""
+        )
         job.status = "succeeded"
         job.finished_at = datetime.utcnow()
         db.commit()

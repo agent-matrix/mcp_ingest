@@ -1,13 +1,13 @@
-
 from __future__ import annotations
+
 import time
-from typing import Any, Dict, Optional
+from typing import Any
 
 # Optional deps: MCP client
 try:  # pragma: no cover - optional
     import anyio
-    from mcp.client.sse import sse_client  # type: ignore
     from mcp.client.session import ClientSession  # type: ignore
+    from mcp.client.sse import sse_client  # type: ignore
 except Exception:  # pragma: no cover
     anyio = None  # type: ignore
     sse_client = None  # type: ignore
@@ -18,11 +18,16 @@ import httpx
 __all__ = ["probe_mcp", "validate_server"]
 
 
-async def _probe_async(url: str, *, tool: Optional[str] = None, sample: Optional[Dict[str, Any]] = None,
-                       timeout: float = 5.0) -> Dict[str, Any]:
+async def _probe_async(
+    url: str,
+    *,
+    tool: str | None = None,
+    sample: dict[str, Any] | None = None,
+    timeout: float = 5.0,
+) -> dict[str, Any]:
     """Async probe using MCP SSE client if available; falls back to HTTP preflight."""
     t0 = time.perf_counter()
-    result: Dict[str, Any] = {
+    result: dict[str, Any] = {
         "url": url,
         "reachable": False,
         "handshake_ms": None,
@@ -89,8 +94,13 @@ async def _probe_async(url: str, *, tool: Optional[str] = None, sample: Optional
     return result
 
 
-def probe_mcp(url: str, *, tool: Optional[str] = None, sample: Optional[Dict[str, Any]] = None,
-              timeout: float = 5.0) -> Dict[str, Any]:
+def probe_mcp(
+    url: str,
+    *,
+    tool: str | None = None,
+    sample: dict[str, Any] | None = None,
+    timeout: float = 5.0,
+) -> dict[str, Any]:
     """Public entry: perform an MCP probe (async-aware if available)."""
     if anyio is None:
         # fallback to sync path if anyio not available
@@ -101,7 +111,8 @@ def probe_mcp(url: str, *, tool: Optional[str] = None, sample: Optional[Dict[str
 
 # ---- simple HTTP preflight ----
 
-def http_preflight(url: str, *, timeout: float = 3.0) -> Dict[str, Any]:
+
+def http_preflight(url: str, *, timeout: float = 3.0) -> dict[str, Any]:
     out = {"url": url, "reachable": False, "status": None, "error": None}
     try:
         with httpx.Client(timeout=timeout) as c:
@@ -115,4 +126,3 @@ def http_preflight(url: str, *, timeout: float = 3.0) -> Dict[str, Any]:
 
 # Backward-compatible alias
 validate_server = probe_mcp
-

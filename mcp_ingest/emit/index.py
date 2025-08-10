@@ -1,10 +1,11 @@
-
 from __future__ import annotations
-from pathlib import Path
-from typing import Iterable, List, Union
-import json
 
-def _extract_existing(payload: object) -> List[str]:
+import json
+from collections.abc import Iterable
+from pathlib import Path
+
+
+def _extract_existing(payload: object) -> list[str]:
     if not isinstance(payload, dict):
         return []
     # Prefer canonical {"manifests": [...]} shape
@@ -12,7 +13,7 @@ def _extract_existing(payload: object) -> List[str]:
         return [x for x in payload["manifests"] if isinstance(x, str)]
     # Tolerate alternative shapes sometimes seen in the wild
     if isinstance(payload.get("items"), list):
-        out: List[str] = []
+        out: list[str] = []
         for it in payload["items"]:
             if isinstance(it, str):
                 out.append(it)
@@ -22,7 +23,7 @@ def _extract_existing(payload: object) -> List[str]:
     return []
 
 
-def write_index(path: Union[str, Path], manifests: Iterable[str], *, additive: bool = True) -> Path:
+def write_index(path: str | Path, manifests: Iterable[str], *, additive: bool = True) -> Path:
     """Write an index.json that lists manifest paths/URLs.
 
     If additive=True and an index already exists, merge (dedupe, preserve order).
@@ -33,7 +34,7 @@ def write_index(path: Union[str, Path], manifests: Iterable[str], *, additive: b
 
     new_items = [str(m).strip() for m in manifests if str(m).strip()]
 
-    existing: List[str] = []
+    existing: list[str] = []
     if additive and p.exists():
         try:
             data = json.loads(p.read_text(encoding="utf-8"))
@@ -41,7 +42,7 @@ def write_index(path: Union[str, Path], manifests: Iterable[str], *, additive: b
         except Exception:
             existing = []
 
-    merged: List[str] = []
+    merged: list[str] = []
     for item in [*existing, *new_items]:
         if item not in merged:
             merged.append(item)
@@ -50,5 +51,5 @@ def write_index(path: Union[str, Path], manifests: Iterable[str], *, additive: b
     p.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
     return p
 
-__all__ = ["write_index"]
 
+__all__ = ["write_index"]

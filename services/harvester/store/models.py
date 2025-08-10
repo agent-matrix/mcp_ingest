@@ -1,24 +1,25 @@
 from __future__ import annotations
+
 import os
 import uuid
 from datetime import datetime
-from typing import Any, Dict, Optional, List, Literal
+from typing import Any, Literal
 
+from pydantic import BaseModel, Field
 from sqlalchemy import (
-    create_engine,
+    JSON,
+    Boolean,
     Column,
-    String,
-    Text,
-    Integer,
     DateTime,
     Float,
-    JSON,
     ForeignKey,
-    Boolean,
     Index,
+    Integer,
+    String,
+    Text,
+    create_engine,
 )
-from sqlalchemy.orm import declarative_base, sessionmaker, relationship, Session
-from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session, declarative_base, relationship, sessionmaker
 
 # ---------------------------------------------------------------------------
 # Database setup
@@ -58,8 +59,8 @@ class Job(Base):
     started_at = Column(DateTime, nullable=True)
     finished_at = Column(DateTime, nullable=True)
 
-    confidence = Column(Float, nullable=True)        # detector/validate composite
-    frameworks = Column(String, nullable=True)       # comma-separated tags
+    confidence = Column(Float, nullable=True)  # detector/validate composite
+    frameworks = Column(String, nullable=True)  # comma-separated tags
 
     # New: repo metadata & harvest summaries
     sha = Column(String, nullable=True, index=True)
@@ -70,9 +71,7 @@ class Job(Base):
 
     artifacts = relationship("Artifact", back_populates="job", cascade="all, delete-orphan")
 
-    __table_args__ = (
-        Index("ix_jobs_status_created", "status", "created_at"),
-    )
+    __table_args__ = (Index("ix_jobs_status_created", "status", "created_at"),)
 
 
 class Artifact(Base):
@@ -80,8 +79,8 @@ class Artifact(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     job_id = Column(String, ForeignKey("jobs.id"), index=True, nullable=False)
-    kind = Column(String, nullable=False)      # manifest|index|sbom|log|other
-    uri = Column(String, nullable=False)       # file:// or s3:// or ghpages path
+    kind = Column(String, nullable=False)  # manifest|index|sbom|log|other
+    uri = Column(String, nullable=False)  # file:// or s3:// or ghpages path
     digest = Column(String, nullable=True)
     bytes = Column(Integer, nullable=True)
 
@@ -112,9 +111,7 @@ class CatalogEntry(Base):
 
     notes = Column(Text, nullable=True)
 
-    __table_args__ = (
-        Index("ix_catalog_transport_validated", "transport", "validated"),
-    )
+    __table_args__ = (Index("ix_catalog_transport_validated", "transport", "validated"),)
 
 
 # ---------------------------------------------------------------------------
@@ -123,7 +120,7 @@ class CatalogEntry(Base):
 class JobCreate(BaseModel):
     source: str
     mode: Literal["pack", "harvest_repo"] = "pack"
-    options: Dict[str, Any] = Field(default_factory=dict)
+    options: dict[str, Any] = Field(default_factory=dict)
 
 
 class JobView(BaseModel):
@@ -131,14 +128,15 @@ class JobView(BaseModel):
     status: str
     source: str
     mode: str
-    summary: Dict[str, Any] = Field(default_factory=dict)
-    artifacts: List[Dict[str, Any]] = Field(default_factory=list)
-    errors: Optional[str] = None
+    summary: dict[str, Any] = Field(default_factory=dict)
+    artifacts: list[dict[str, Any]] = Field(default_factory=list)
+    errors: str | None = None
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def init_db() -> None:
     Base.metadata.create_all(engine)
@@ -152,7 +150,7 @@ def job_to_view(db: Session, job: Job) -> JobView:
     arts = db.query(Artifact).filter(Artifact.job_id == job.id).all()
     transports_summary = job.transports_summary or {}
 
-    summary: Dict[str, Any] = {
+    summary: dict[str, Any] = {
         "confidence": job.confidence,
         "frameworks": (job.frameworks or ""),
         "sha": job.sha,

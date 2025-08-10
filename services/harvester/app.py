@@ -1,14 +1,16 @@
 from __future__ import annotations
+
 import threading
 import time
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .store.models import init_db
-from .routers import jobs as jobs_router
 from .routers import catalogs as catalogs_router
-from .workers.queue import InMemoryQueue
+from .routers import jobs as jobs_router
+from .store.models import init_db
 from .workers.runner import worker_loop
+
 
 def create_app() -> FastAPI:
     init_db()
@@ -39,5 +41,6 @@ def create_app() -> FastAPI:
         return {"ok": True}
 
     return app
+
 
 app = create_app()

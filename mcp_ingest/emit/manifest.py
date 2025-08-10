@@ -1,5 +1,6 @@
 from __future__ import annotations
-from typing import Any, Dict, List, Optional, Literal
+
+from typing import Any, Literal
 
 from ..utils.sse import ensure_sse, strip_trailing_slash
 
@@ -14,21 +15,21 @@ def build_manifest(
     server_name: str,
     # Transport & endpoint/exec
     transport: AllowedTransport = "SSE",
-    server_url: Optional[str] = None,
-    exec_cmd: Optional[List[str]] = None,
-    exec_cwd: Optional[str] = None,
-    exec_env: Optional[Dict[str, str]] = None,
+    server_url: str | None = None,
+    exec_cmd: list[str] | None = None,
+    exec_cwd: str | None = None,
+    exec_env: dict[str, str] | None = None,
     # Tool & metadata
-    tool_id: Optional[str] = None,
-    tool_name: Optional[str] = None,
+    tool_id: str | None = None,
+    tool_name: str | None = None,
     tool_description: str = "",
     description: str = "",
     version: str = "0.1.0",
-    entity_id: Optional[str] = None,
-    entity_name: Optional[str] = None,
-    resources: Optional[List[Dict[str, Any]]] = None,
-    prompts: Optional[List[Dict[str, Any]]] = None,
-) -> Dict[str, Any]:
+    entity_id: str | None = None,
+    entity_name: str | None = None,
+    resources: list[dict[str, Any]] | None = None,
+    prompts: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """Construct a valid *mcp_server* manifest, with transport-aware server block.
 
     Changes vs MVP:
@@ -51,7 +52,7 @@ def build_manifest(
     ent_name = entity_name or server_name.replace("-", " ").title()
 
     # ---- Build the server block based on transport ----
-    server_block: Dict[str, Any] = {
+    server_block: dict[str, Any] = {
         "name": server_name,
         "description": description,
         "transport": transport,
@@ -76,15 +77,21 @@ def build_manifest(
 
     elif transport == "STDIO":
         # For STDIO, URL is not required; exec is required
-        if not exec_cmd or not isinstance(exec_cmd, list) or not all(isinstance(x, str) and x for x in exec_cmd):
+        if (
+            not exec_cmd
+            or not isinstance(exec_cmd, list)
+            or not all(isinstance(x, str) and x for x in exec_cmd)
+        ):
             raise ValueError(
                 "transport='STDIO' requires exec_cmd: List[str], e.g. ['npx','-y','@modelcontextprotocol/server-filesystem']"
             )
-        exec_block: Dict[str, Any] = {"cmd": exec_cmd}
+        exec_block: dict[str, Any] = {"cmd": exec_cmd}
         if exec_cwd:
             exec_block["cwd"] = exec_cwd
         if exec_env:
-            if not isinstance(exec_env, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in exec_env.items()):
+            if not isinstance(exec_env, dict) or not all(
+                isinstance(k, str) and isinstance(v, str) for k, v in exec_env.items()
+            ):
                 raise ValueError("exec_env must be a dict[str,str] if provided")
             exec_block["env"] = exec_env
         server_block["exec"] = exec_block
@@ -93,7 +100,7 @@ def build_manifest(
             raise ValueError("server_url must be omitted when transport='STDIO'")
 
     # ---- Optional tool block ----
-    tool_block: Dict[str, Any] | None = None
+    tool_block: dict[str, Any] | None = None
     if tool_id or tool_name:
         _tid = tool_id or (tool_name or "tool").replace(" ", "-").lower()
         _tname = tool_name or tool_id or "tool"
@@ -112,13 +119,15 @@ def build_manifest(
     assoc_resources = [r.get("id", r.get("name")) for r in res_list if isinstance(r, dict)]
     assoc_prompts = [p.get("id") for p in pr_list if isinstance(p, dict) and p.get("id")]
 
-    server_block.update({
-        "associated_tools": assoc_tools,
-        "associated_resources": assoc_resources,
-        "associated_prompts": assoc_prompts,
-    })
+    server_block.update(
+        {
+            "associated_tools": assoc_tools,
+            "associated_resources": assoc_resources,
+            "associated_prompts": assoc_prompts,
+        }
+    )
 
-    manifest: Dict[str, Any] = {
+    manifest: dict[str, Any] = {
         "type": "mcp_server",
         "id": ent_id,
         "name": ent_name,
@@ -136,7 +145,7 @@ def build_manifest(
     return manifest
 
 
-def _validate_manifest(manifest: Dict[str, Any]) -> None:
+def _validate_manifest(manifest: dict[str, Any]) -> None:
     # Top-level required
     for k in REQUIRED_TOP:
         if not manifest.get(k):
