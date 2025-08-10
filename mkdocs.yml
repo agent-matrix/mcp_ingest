@@ -1,0 +1,47 @@
+site_name: MCP Ingest
+site_description: SDK + CLI to discover, describe, validate, and register MCP servers into MatrixHub
+site_url: https://example.com/mcp-ingest
+repo_url: https://github.com/your-org/mcp-ingest
+repo_name: your-org/mcp-ingest
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.instant
+    - content.code.copy
+    - search.suggest
+    - search.highlight
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+
+nav:
+  - Home: index.md
+  - Quickstart: quickstart.md
+  - CLI: cli.md
+  - SDK: sdk.md
+  - Harvester Service: harvester.md
+  - MatrixHub Integration: matrixhub.md
+  - Architecture: architecture.md
+  - Development: development.md
+  - Troubleshooting: troubleshooting.md
+  - FAQ: faq.md
+  - Contributing: contributing.md
+  - Changelog: changelog.md
+
+markdown_extensions:
+  - admonition
+  - footnotes
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed
+  - pymdownx.snippets
+
+plugins:
+  - search

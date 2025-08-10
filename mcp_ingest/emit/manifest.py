@@ -1,15 +1,24 @@
-
 from __future__ import annotations
-from typing import Any, Dict, List, Optional
-from ..utils.sse import ensure_sse
+from typing import Any, Dict, List, Optional, Literal
+
+from ..utils.sse import ensure_sse, strip_trailing_slash
+
+__all__ = ["build_manifest"]
 
 REQUIRED_TOP = ("type", "id", "name", "version")
+AllowedTransport = Literal["SSE", "STDIO", "WS"]
 
 
 def build_manifest(
     *,
     server_name: str,
-    server_url: str,
+    # Transport & endpoint/exec
+    transport: AllowedTransport = "SSE",
+    server_url: Optional[str] = None,
+    exec_cmd: Optional[List[str]] = None,
+    exec_cwd: Optional[str] = None,
+    exec_env: Optional[Dict[str, str]] = None,
+    # Tool & metadata
     tool_id: Optional[str] = None,
     tool_name: Optional[str] = None,
     tool_description: str = "",
@@ -20,29 +29,94 @@ def build_manifest(
     resources: Optional[List[Dict[str, Any]]] = None,
     prompts: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
-    """Construct a minimal mcp_server manifest with SSE normalized.
-    Raises ValueError on missing/invalid inputs.
+    """Construct a valid *mcp_server* manifest, with transport-aware server block.
+
+    Changes vs MVP:
+      • Supports server.transport in {"SSE", "STDIO", "WS"}.
+      • If transport=="SSE", normalize `server_url` to `/sse`.
+      • If transport=="STDIO", require an `exec` block (no URL).
+      • If transport=="WS", keep URL as-is (do not force `/sse`).
+
+    Raises:
+      ValueError with clear, actionable messages when required fields are missing/invalid.
     """
-    if not server_name or not server_url:
-        raise ValueError("server_name and server_url are required")
+    if not server_name:
+        raise ValueError("server_name is required")
+
+    transport = (transport or "SSE").upper()  # type: ignore[assignment]
+    if transport not in {"SSE", "STDIO", "WS"}:
+        raise ValueError("transport must be one of: 'SSE', 'STDIO', 'WS'")
 
     ent_id = entity_id or f"{server_name}-agent"
     ent_name = entity_name or server_name.replace("-", " ").title()
 
-    sse_url = ensure_sse(server_url)
+    # ---- Build the server block based on transport ----
+    server_block: Dict[str, Any] = {
+        "name": server_name,
+        "description": description,
+        "transport": transport,
+    }
 
-    # tool block is optional, but if provided ensure id/name
+    if transport == "SSE":
+        if not server_url:
+            raise ValueError("server_url is required for transport='SSE'")
+        # strip trailing slash then ensure /sse
+        norm = ensure_sse(strip_trailing_slash(server_url))
+        server_block["url"] = norm
+        # no exec for SSE
+        if exec_cmd:
+            raise ValueError("exec_cmd is not allowed when transport='SSE'")
+
+    elif transport == "WS":
+        if not server_url:
+            raise ValueError("server_url is required for transport='WS'")
+        server_block["url"] = strip_trailing_slash(server_url)
+        if exec_cmd:
+            raise ValueError("exec_cmd is not allowed when transport='WS'")
+
+    elif transport == "STDIO":
+        # For STDIO, URL is not required; exec is required
+        if not exec_cmd or not isinstance(exec_cmd, list) or not all(isinstance(x, str) and x for x in exec_cmd):
+            raise ValueError(
+                "transport='STDIO' requires exec_cmd: List[str], e.g. ['npx','-y','@modelcontextprotocol/server-filesystem']"
+            )
+        exec_block: Dict[str, Any] = {"cmd": exec_cmd}
+        if exec_cwd:
+            exec_block["cwd"] = exec_cwd
+        if exec_env:
+            if not isinstance(exec_env, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in exec_env.items()):
+                raise ValueError("exec_env must be a dict[str,str] if provided")
+            exec_block["env"] = exec_env
+        server_block["exec"] = exec_block
+        # Do not allow URL in STDIO to avoid ambiguity
+        if server_url:
+            raise ValueError("server_url must be omitted when transport='STDIO'")
+
+    # ---- Optional tool block ----
     tool_block: Dict[str, Any] | None = None
     if tool_id or tool_name:
+        _tid = tool_id or (tool_name or "tool").replace(" ", "-").lower()
+        _tname = tool_name or tool_id or "tool"
         tool_block = {
-            "id": tool_id or (tool_name or "tool").replace(" ", "-").lower(),
-            "name": tool_name or tool_id or "tool",
+            "id": _tid,
+            "name": _tname,
             "description": tool_description or "",
             "integration_type": "MCP",
         }
 
     res_list = list(resources or [])
     pr_list = list(prompts or [])
+
+    # Associated IDs
+    assoc_tools = [tool_block["id"]] if tool_block else []
+    assoc_resources = [r.get("id", r.get("name")) for r in res_list if isinstance(r, dict)]
+    assoc_prompts = [p.get("id") for p in pr_list if isinstance(p, dict) and p.get("id")]
+
+    server_block.update({
+        "associated_tools": assoc_tools,
+        "associated_resources": assoc_resources,
+        "associated_prompts": assoc_prompts,
+    })
 
     manifest: Dict[str, Any] = {
         "type": "mcp_server",
@@ -54,14 +128,7 @@ def build_manifest(
             **({"tool": tool_block} if tool_block else {}),
             "resources": res_list,
             "prompts": pr_list,
-            "server": {
-                "name": server_name,
-                "description": description,
-                "url": sse_url,
-                "associated_tools": [tool_block["id"]] if tool_block else [],
-                "associated_resources": [r.get("id", r.get("name")) for r in res_list if isinstance(r, dict)],
-                "associated_prompts": [p.get("id") for p in pr_list if isinstance(p, dict) and p.get("id")],
-            },
+            "server": server_block,
         },
     }
 
@@ -70,13 +137,38 @@ def build_manifest(
 
 
 def _validate_manifest(manifest: Dict[str, Any]) -> None:
+    # Top-level required
     for k in REQUIRED_TOP:
         if not manifest.get(k):
             raise ValueError(f"manifest missing required field: {k}")
+
     mreg = manifest.get("mcp_registration")
     if not isinstance(mreg, dict):
-        raise ValueError("manifest.mcp_registration must be a dict")
-    server = mreg.get("server")
-    if not isinstance(server, dict) or not server.get("url"):
-        raise ValueError("manifest.mcp_registration.server.url is required")
+        raise ValueError("manifest.mcp_registration must be an object")
 
+    server = mreg.get("server")
+    if not isinstance(server, dict):
+        raise ValueError("manifest.mcp_registration.server must be an object")
+
+    transport = server.get("transport")
+    if transport not in {"SSE", "STDIO", "WS"}:
+        raise ValueError("server.transport must be one of: 'SSE', 'STDIO', 'WS'")
+
+    if transport in {"SSE", "WS"}:
+        if not server.get("url"):
+            raise ValueError(f"server.url is required when transport='{transport}'")
+        if transport == "SSE" and not str(server["url"]).endswith("/sse"):
+            # Guard that SSE normalization took place
+            raise ValueError("server.url must end with '/sse' when transport='SSE'")
+        if server.get("exec") is not None:
+            raise ValueError(f"server.exec must be omitted when transport='{transport}'")
+
+    if transport == "STDIO":
+        exec_block = server.get("exec")
+        if not isinstance(exec_block, dict):
+            raise ValueError("server.exec is required and must be an object when transport='STDIO'")
+        cmd = exec_block.get("cmd")
+        if not isinstance(cmd, list) or not cmd or not all(isinstance(x, str) and x for x in cmd):
+            raise ValueError("server.exec.cmd must be a non-empty list[str]")
+        if server.get("url"):
+            raise ValueError("server.url must be omitted when transport='STDIO'")

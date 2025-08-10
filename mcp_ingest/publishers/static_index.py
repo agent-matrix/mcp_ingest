@@ -1,8 +1,12 @@
 from __future__ import annotations
-import hashlib, json, os, shutil
+import hashlib
+import json
+import os
+import shutil
+import subprocess
 from dataclasses import dataclass, asdict
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Union
 
 try:  # optional
     import boto3  # type: ignore
@@ -13,7 +17,13 @@ __all__ = [
     "PublishResult",
     "publish",
     "update_global_index",
+    "merge_indexes",
 ]
+
+
+# -----------------------------------------------------------------------------
+# Models
+# -----------------------------------------------------------------------------
 
 
 @dataclass
@@ -28,7 +38,10 @@ class PublishResult:
         return asdict(self)
 
 
-# --- helpers ---------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# Helpers
+# -----------------------------------------------------------------------------
+
 
 def _sha256_file(p: Path) -> str:
     h = hashlib.sha256()
@@ -48,7 +61,24 @@ def _ensure_listable_paths(paths: Dict[str, str | Path]) -> Dict[str, Path]:
     return out
 
 
-# --- providers -------------------------------------------------------------
+def _guess_mime(name: str) -> str:
+    if name.endswith(".json"):
+        return "application/json"
+    if name.endswith(".yaml") or name.endswith(".yml"):
+        return "application/x-yaml"
+    return "application/octet-stream"
+
+
+def _run(cmd: Sequence[str]) -> None:
+    p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if p.returncode != 0:
+        raise RuntimeError(f"command failed: {' '.join(cmd)}\n{p.stderr}")
+
+
+# -----------------------------------------------------------------------------
+# Providers
+# -----------------------------------------------------------------------------
+
 
 # S3 provider (boto3 preferred; fallback to aws CLI)
 
@@ -84,7 +114,7 @@ def _publish_s3(paths: Dict[str, Path], dest: str, *, cache_control: str, conten
                 s3.upload_file(str(p), bucket, key, ExtraArgs=extra)
                 published[k] = f"https://{bucket}.s3.amazonaws.com/{key}"
             return PublishResult("s3", dest, published, True)
-        except Exception as e:
+        except Exception as e:  # pragma: no cover
             return PublishResult("s3", dest, published, False, error=str(e))
 
     # fallback to AWS CLI
@@ -95,14 +125,20 @@ def _publish_s3(paths: Dict[str, Path], dest: str, *, cache_control: str, conten
                 url = f"s3://{bucket}/{key}"
                 # set cache-control and content-type if possible
                 cmd = [
-                    "aws", "s3", "cp", str(p), url,
-                    "--cache-control", cache_control,
-                    "--content-type", _guess_mime(p.name),
+                    "aws",
+                    "s3",
+                    "cp",
+                    str(p),
+                    url,
+                    "--cache-control",
+                    cache_control,
+                    "--content-type",
+                    _guess_mime(p.name),
                 ]
                 _run(cmd)
                 published[k] = f"https://{bucket}.s3.amazonaws.com/{key}"
             return PublishResult("s3", dest, published, True)
-        except Exception as e:
+        except Exception as e:  # pragma: no cover
             return PublishResult("s3", dest, published, False, error=str(e))
 
     return PublishResult("s3", dest, {}, False, error="boto3 or aws CLI required for S3 publishing")
@@ -131,7 +167,10 @@ def _publish_ghpages(paths: Dict[str, Path], dest: str, *, cache_control: str, c
     return PublishResult("ghpages", dest, published, True)
 
 
-# --- public API ------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# Public API
+# -----------------------------------------------------------------------------
+
 
 def publish(
     paths: Dict[str, str | Path],
@@ -170,7 +209,7 @@ def update_global_index(manifests: List[str], shard_key: str, *, out_dir: str | 
             data = json.loads(shard.read_text(encoding="utf-8"))
             if isinstance(data, dict) and isinstance(data.get("manifests"), list):
                 existing = [str(x) for x in data["manifests"] if isinstance(x, str)]
-        except Exception:
+        except Exception:  # pragma: no cover
             existing = []
 
     merged: List[str] = []
@@ -181,19 +220,88 @@ def update_global_index(manifests: List[str], shard_key: str, *, out_dir: str | 
     shard.write_text(json.dumps({"manifests": merged}, indent=2, sort_keys=True), encoding="utf-8")
 
 
-# --- tiny utils ------------------------------------------------------------
-
-import subprocess
-
-def _run(cmd: list[str]) -> None:
-    p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    if p.returncode != 0:
-        raise RuntimeError(f"command failed: {' '.join(cmd)}\n{p.stderr}")
+# -----------------------------------------------------------------------------
+# Repo-level merge utility
+# -----------------------------------------------------------------------------
 
 
-def _guess_mime(name: str) -> str:
-    if name.endswith('.json'):
-        return 'application/json'
-    if name.endswith('.yaml') or name.endswith('.yml'):
-        return 'application/x-yaml'
-    return 'application/octet-stream'
+def _extract_from_index_payload(payload: Any, base: Optional[Path]) -> List[str]:
+    """Extract manifest entries from an index-like payload.
+
+    Supports common shapes and resolves relative paths against *base* (if provided).
+    """
+    out: List[str] = []
+    if not isinstance(payload, dict):
+        return out
+
+    items: List[str] = []
+    if isinstance(payload.get("manifests"), list):
+        items = [x for x in payload["manifests"] if isinstance(x, str)]
+    elif isinstance(payload.get("items"), list):
+        for it in payload["items"]:
+            if isinstance(it, str):
+                items.append(it)
+            elif isinstance(it, dict) and isinstance(it.get("manifest_url"), str):
+                items.append(it["manifest_url"])
+
+    # Resolve relative paths when base is a local filesystem path
+    for i in items:
+        s = i.strip()
+        if not s:
+            continue
+        if s.startswith("http://") or s.startswith("https://") or s.startswith("s3://"):
+            out.append(s)
+        else:
+            if base is not None:
+                out.append(str((base / s).resolve()))
+            else:
+                out.append(s)
+    return out
+
+
+def merge_indexes(child_index_paths: Iterable[Union[str, Path]]) -> Dict[str, Any]:
+    """Merge multiple *local* child index.json files into a single repo-level index.
+
+    Relative manifest entries are resolved against the directory of the child index file.
+    Duplicates are removed while preserving first-seen order.
+
+    Parameters
+    ----------
+    child_index_paths : Iterable[Union[str, Path]]
+        Paths to child index.json files (local filesystem). URLs are tolerated
+        but left as-is (no fetching in this helper).
+
+    Returns
+    -------
+    Dict[str, Any]
+        A dict with shape {"manifests": [ ... ]} suitable to write as index.json.
+    """
+    merged: List[str] = []
+
+    for p in child_index_paths:
+        ipath = Path(str(p)).expanduser()
+        base_dir: Optional[Path] = None
+        data: Optional[Dict[str, Any]] = None
+
+        # Only local files are read. If it looks like a URL, skip reading and just add it.
+        s = str(p)
+        if s.startswith("http://") or s.startswith("https://") or s.startswith("s3://"):
+            # treat it directly as a manifest index URL (not typical for repo-level merge)
+            # We cannot dereference here; skip.
+            continue
+
+        if ipath.exists():
+            try:
+                base_dir = ipath.parent.resolve()
+                data = json.loads(ipath.read_text(encoding="utf-8"))
+            except Exception:
+                data = None
+        if not data:
+            continue
+
+        manifests = _extract_from_index_payload(data, base=base_dir)
+        for m in manifests:
+            if m not in merged:
+                merged.append(m)
+
+    return {"manifests": merged}
