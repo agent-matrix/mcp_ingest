@@ -27,7 +27,6 @@ import re
 import sys
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from typing import Tuple
 from urllib.parse import urlparse
 
 import httpx
@@ -180,7 +179,7 @@ def extract_urls_from_markdown(md: str) -> list[str]:
 # --- README discovery -----------------------------------------------------
 
 
-def _parse_github_repo_url(repo_url: str) -> Tuple[str, str]:
+def _parse_github_repo_url(repo_url: str) -> tuple[str, str]:
     """Return (owner, repo) from a GitHub repository identifier or URL.
 
     Accepts:

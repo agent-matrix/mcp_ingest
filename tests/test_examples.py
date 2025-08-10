@@ -12,19 +12,18 @@ Run with: pytest -q
 """
 
 import json
+import os
 from pathlib import Path
 
+import httpx
 import pytest
 
 from mcp_ingest.harvest.repo import harvest_repo
 from mcp_ingest.sdk import describe as sdk_describe
 from mcp_ingest.utils.extractor import (
     extract_github_repo_links_from_readme,
-    RepoTarget,
 )
 from mcp_ingest.utils.github_archive import download_ref
-import httpx
-import os
 
 
 def _repo_root() -> Path:

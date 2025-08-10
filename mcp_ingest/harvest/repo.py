@@ -35,11 +35,11 @@ from ..detect.base import DetectReport
 from ..detect.fastmcp import detect_path as detect_fastmcp
 from ..detect.langchain import detect_path as detect_langchain
 from ..detect.raw_mcp import detect_path as detect_raw_mcp
+from ..emit.enrich import enrich_manifest
 from ..emit.index import write_index
 from ..sdk import autoinstall as sdk_autoinstall
 from ..sdk import describe as sdk_describe
 from ..utils.fetch import LocalSource, prepare_source
-from ..emit.enrich import enrich_manifest
 
 # Optional publisher; imported lazily when used
 try:  # pragma: no cover (optional dep path at runtime)

@@ -21,7 +21,6 @@ import re
 import shutil
 import subprocess
 import tempfile
-import typing as _t
 import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -130,9 +129,7 @@ def _normalize_github_http_to_git(src: str) -> tuple[str, str | None] | None:
 
 def _classify_source(
     source: str,
-) -> _t.Union[
-    tuple[Literal["dir", "git", "zip"], str | None], tuple[Literal["git"], str | None, str]
-]:
+) -> tuple[Literal["dir", "git", "zip"], str | None] | tuple[Literal["git"], str | None, str]:
     """Return (kind, ref) OR (kind, ref, normalized_src). Ref may be branch/tag/sha for git."""
     parsed = urlparse(source)
 

@@ -2,13 +2,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Optional, Tuple
+from typing import Any
 from urllib.parse import urlparse
 
 __all__ = ["enrich_manifest", "guess_license"]
 
 
-def _owner_repo_from_github_url(u: str) -> Optional[Tuple[str, str]]:
+def _owner_repo_from_github_url(u: str) -> tuple[str, str] | None:
     """
     Accepts https://github.com/<owner>/<repo>[.git][/...]
     Returns (owner, repo) without .git.
