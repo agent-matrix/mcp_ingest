@@ -1,8 +1,8 @@
 site_name: MCP Ingest
 site_description: SDK + CLI to discover, describe, validate, and register MCP servers into MatrixHub
 site_url: https://example.com/mcp-ingest
-repo_url: https://github.com/your-org/mcp-ingest
-repo_name: your-org/mcp-ingest
+repo_url: https://github.com/agent-matrix/mcp_ingest
+repo_name: agent-matrix/mcp_ingest
 edit_uri: edit/main/docs/
 
 theme:
@@ -21,6 +21,9 @@ theme:
 nav:
   - Home: index.md
   - Quickstart: quickstart.md
+  - Tutorials:
+      - Harvest README-linked servers: tutorials/harvest-source.md
+  - API: api.md
   - CLI: cli.md
   - SDK: sdk.md
   - Harvester Service: harvester.md
@@ -45,3 +48,4 @@ markdown_extensions:
 
 plugins:
   - search
+  - mermaid2

@@ -42,6 +42,7 @@ try:  # pragma: no cover (optional dep path at runtime)
 except Exception:  # pragma: no cover
     publish_static = None  # type: ignore
 
+__all__ = ["HarvestResult", "harvest_repo"]
 
 log = logging.getLogger(__name__)
 
@@ -92,7 +93,6 @@ def harvest_repo(
     try:
         local: LocalSource = prepare_source(source)
     except Exception as e:  # pragma: no cover - network/OS dependent
-        # FIX: Chain the original exception `e` for better debugging.
         raise RuntimeError(f"prepare_source failed for {source}: {e}") from e
 
     try:

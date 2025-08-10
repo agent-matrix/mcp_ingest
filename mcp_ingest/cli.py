@@ -8,6 +8,7 @@ User-facing CLI for the mcp-ingest SDK. Commands:
   - register       : POST manifest to MatrixHub /catalog/install
   - pack           : detect -> describe -> (optional) register
   - harvest-repo   : repo-wide scan (dir|git|zip) -> many manifests + repo index
+  - harvest-source : extract README links from a GitHub repo -> harvest each -> merge catalog
 
 All commands print structured JSON to stdout (CI-friendly). Python 3.11+.
 """
@@ -27,6 +28,12 @@ try:  # pragma: no cover - optional dependency within the package
     from .harvest.repo import harvest_repo  # type: ignore
 except Exception:  # pragma: no cover
     harvest_repo = None  # type: ignore
+
+# Optional (Stage-2+: README extractor + source orchestrator)
+try:  # pragma: no cover - optional import until feature lands
+    from .harvest.source import harvest_source  # type: ignore
+except Exception:  # pragma: no cover
+    harvest_source = None  # type: ignore
 
 
 # ------------------------- helpers -------------------------
@@ -166,6 +173,31 @@ def cmd_harvest_repo(args: argparse.Namespace) -> None:
     _print_json(payload)
 
 
+def cmd_harvest_source(args: argparse.Namespace) -> None:
+    if harvest_source is None:  # pragma: no cover
+        raise SystemExit("harvest-source is unavailable: .harvest.source not found in package")
+
+    if args.register and not args.matrixhub:
+        raise SystemExit("--matrixhub is required when using --register")
+
+    summary = harvest_source(
+        repo_url=args.repo,
+        out_dir=args.out,
+        yes=bool(args.yes),
+        max_parallel=int(args.max_parallel),
+        only_github=bool(args.only_github),
+        register=bool(args.register),
+        matrixhub=args.matrixhub,
+        log_file=args.log_file,
+    )
+
+    _print_json(summary)
+
+    # Exit non-zero on total failure (no manifests and there were errors)
+    if summary.get("manifests_count", 0) == 0 and summary.get("errors"):
+        raise SystemExit(2)
+
+
 # ------------------------- parser -------------------------
 
 
@@ -234,6 +266,35 @@ def build_parser() -> argparse.ArgumentParser:
     h.add_argument("--register", action="store_true", help="register to MatrixHub after describe")
     h.add_argument("--matrixhub", default=None, help="MatrixHub base URL if --register is set")
     h.set_defaults(func=cmd_harvest_repo)
+
+    # harvest-source (README extractor -> multi-repo harvest -> merge)
+    hs = sub.add_parser(
+        "harvest-source",
+        help=(
+            "Extract README links from a GitHub repo, harvest each candidate, and merge into one catalog"
+        ),
+    )
+    hs.add_argument("repo", help="GitHub repository URL to read the README from")
+    hs.add_argument("--out", required=True, help="Output directory for merged catalog")
+    hs.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
+    hs.add_argument(
+        "--max-parallel", type=int, default=4, help="Parallelism for candidate harvests"
+    )
+    hs.add_argument(
+        "--only-github",
+        action="store_true",
+        default=False,
+        help="Ignore non-github.com links in README",
+    )
+    hs.add_argument("--register", action="store_true", help="Register each manifest to MatrixHub")
+    hs.add_argument(
+        "--matrixhub", default=None, help="MatrixHub base URL (required for --register)"
+    )
+    hs.add_argument(
+        "-v", "--verbose", action="count", default=0, help="Increase verbosity (-v, -vv)"
+    )
+    hs.add_argument("--log-file", default=None, help="Optional log file path for the orchestrator")
+    hs.set_defaults(func=cmd_harvest_source)
 
     return p
 

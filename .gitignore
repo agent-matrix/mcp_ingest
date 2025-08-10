@@ -1,1 +1,85 @@
-/.venv
+# ---- Python bytecode / caches -------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+
+# ---- Virtual environments -----------------------------------------------------
+.venv/
+venv/
+.venv*/
+.python-version
+
+# dotenv (keep examples)
+.env
+.env.*
+!.env.example
+
+# ---- Build / packaging --------------------------------------------------------
+build/
+dist/
+wheels/
+.eggs/
+*.egg-info/
+*.egg
+pip-wheel-metadata/
+
+# ---- Test / coverage artifacts ------------------------------------------------
+.coverage
+.coverage.*
+.pytest_cache/
+htmlcov/
+.tox/
+.nox/
+.cache/
+coverage.xml
+junit.xml
+
+# ---- Type checker / linter caches --------------------------------------------
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.pytype/
+
+# ---- Editors / IDEs -----------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*.swn
+*~
+.DS_Store
+Thumbs.db
+
+# ---- Logs --------------------------------------------------------------------
+*.log
+logs/
+*.pid
+
+# ---- Documentation (MkDocs) ---------------------------------------------------
+site/
+mkdocs_build/
+
+# ---- Harvester local state ----------------------------------------------------
+harvester.db
+services/harvester/*.db
+services/harvester/*.sqlite*
+*.sqlite
+*.sqlite3
+
+# ---- Global index / publishing scratch ---------------------------------------
+global-index/
+public/
+
+# ---- Node (if present in examples) -------------------------------------------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ---- Docker / containers (local exports) -------------------------------------
+*.tar
+*.img
+
+# ---- Example & demo outputs ---------------------------------------------------
+# Keep example source manifests under examples/, but ignore generated artifacts in dist/
+dist/**
