@@ -97,7 +97,7 @@ Outputs one `manifest.json` per detected server and a **repo-level `index.json`*
 
 ## MatrixHub integration
 
-* Preferred path: **`POST /catalog/install`** with the **inline manifest** (what `autoinstall()` and `mcp-ingest register` do).
+* Preferred path: **`POST /catalog/install`** with the **inline manifest** (what `autoinstall()` and `mcp-ingest register` do). And when is installed and running the mcp server can be later imported in MCP Gateway for future use.
 * **Idempotent** by design: HTTP **409** is treated as success; safe to re-run.
 * **SSE normalization**: we auto-fix URLs to end in `/sse` unless the manifest explicitly requests `/messages` or a different transport.
 
