@@ -154,7 +154,7 @@ def _plans_from_targets(repo_url: str, targets: Sequence[RepoTarget]) -> list[Ca
 
 
 def _run_plan(
-    plan: CandidatePlan, *, out_root: Path, register: bool, matrixhub: str | None
+    plan: CandidatePlan, *, out_root: Path, register: bool, matrixhub: str | None, emit_minimal: bool = False
 ) -> CandidateResult:
     plan_out = out_root / _slug(plan.display)
     plan_out.mkdir(parents=True, exist_ok=True)
@@ -167,7 +167,7 @@ def _run_plan(
 
     try:
         if plan.kind == "repo":
-            res: HarvestResult = harvest_repo(plan.repo_url, out_dir=plan_out)
+            res: HarvestResult = harvest_repo(plan.repo_url, out_dir=plan_out, emit_minimal=emit_minimal)
             manifests = [str(Path(p)) for p in (res.manifests or [])]
             idx_path = str(res.index_path) if res.index_path else None
             # Optional registration
@@ -185,7 +185,7 @@ def _run_plan(
                 local = Path(root) / (plan.subpath or "")
                 if not local.exists():
                     raise FileNotFoundError(f"subpath not found in archive: {plan.subpath}")
-                res: HarvestResult = harvest_repo(str(local), out_dir=plan_out)
+                res: HarvestResult = harvest_repo(str(local), out_dir=plan_out, emit_minimal=emit_minimal)
                 manifests = [str(Path(p)) for p in (res.manifests or [])]
                 idx_path = str(res.index_path) if res.index_path else None
                 if register and matrixhub and manifests:
@@ -244,19 +244,44 @@ def harvest_source(
     register: bool = False,
     matrixhub: str | None = None,
     log_file: str | None = None,  # reserved for future structured logs
+    emit_minimal: bool = False,  # Default to False for automated harvesting
+    top: int | None = None,  # NEW: limit number of plans for testing
+    base_only: bool = False,  # NEW: skip README expansion (harvest base repo only)
 ) -> dict:
     """Harvest a GitHub repo *and* all GitHub repos linked in its README.
 
     Returns a JSON-serializable summary with merged index and per-plan results.
+
+    Parameters
+    ----------
+    emit_minimal : bool
+        If True, emit minimal manifests for candidates with no detector signal.
+        If False (default), skip candidates with no detector signal.
+        Default is False for automated harvesting to reduce noise.
+    top : int | None
+        If set, only process the first N candidate plans (base repo included).
+        None or 0 = no limit. Useful for testing without processing all repos.
+    base_only : bool
+        If True, only harvest the base repo (skip README link extraction).
+        If False (default), also harvest repos found in README.
+        For catalog automation, should typically be True.
     """
     out_root = Path(out_dir).expanduser().resolve()
     out_root.mkdir(parents=True, exist_ok=True)
 
-    # 1) Extract README targets
-    targets: list[RepoTarget] = extract_github_repo_links_from_readme(repo_url)
+    # 1) Extract README targets (skip if base_only mode)
+    if base_only:
+        targets: list[RepoTarget] = []
+    else:
+        targets: list[RepoTarget] = extract_github_repo_links_from_readme(repo_url)
 
     # 2) Build plans (include base repo first)
     plans: list[CandidatePlan] = _plans_from_targets(repo_url, targets)
+
+    # NEW: Limit to top N plans for testing (non-destructive mode)
+    if top is not None and top > 0:
+        plans = plans[:top]
+
     if not yes:
         # Print a short preview (caller/CLI can choose to ask beforehand)
         preview = [p.display for p in plans]
@@ -267,7 +292,7 @@ def harvest_source(
     results: list[CandidateResult] = []
     with _fut.ThreadPoolExecutor(max_workers=max_parallel) as ex:
         futs = [
-            ex.submit(_run_plan, plan, out_root=out_root, register=register, matrixhub=matrixhub)
+            ex.submit(_run_plan, plan, out_root=out_root, register=register, matrixhub=matrixhub, emit_minimal=emit_minimal)
             for plan in plans
         ]
         for f in _fut.as_completed(futs):
@@ -293,6 +318,25 @@ def harvest_source(
         if child_indexes
         else {"manifests": sum(manifest_lists, [])}
     )
+
+    # CRITICAL FIX: Convert absolute filesystem paths to relative paths for catalog portability
+    # This ensures index.json works on GitHub and other environments
+    portable_manifests: list[str] = []
+    for m in merged.get("manifests", []):
+        m_path = Path(m)
+        if m_path.is_absolute():
+            try:
+                # Convert to relative path from out_root
+                rel_path = m_path.relative_to(out_root)
+                portable_manifests.append(str(rel_path).replace("\\", "/"))
+            except ValueError:
+                # Path is not under out_root, keep as-is (shouldn't happen)
+                portable_manifests.append(str(m).replace("\\", "/"))
+        else:
+            # Already relative, just normalize slashes
+            portable_manifests.append(str(m).replace("\\", "/"))
+
+    merged["manifests"] = sorted(set(portable_manifests))
 
     top_index = out_root / "index.json"
     top_index.write_text(json.dumps(merged, indent=2, sort_keys=True), encoding="utf-8")
