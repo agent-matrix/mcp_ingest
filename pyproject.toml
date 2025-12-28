@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mcp-ingest"
-version = "0.1.0"
+version = "0.1.1"
 description = "SDK + CLI to describe, validate, and register MCP servers into MatrixHub"
 readme = "README.md"
 requires-python = ">=3.11,<3.13"

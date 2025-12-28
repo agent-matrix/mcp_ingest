@@ -149,7 +149,7 @@ def enrich_manifest(
 
     # Harvester version (useful for debugging)
     prov.setdefault("harvester", "mcp-ingest")
-    prov.setdefault("harvester_version", "0.1.0")
+    prov.setdefault("harvester_version", "0.1.1")
 
     # Artifacts: ensure a git entry if we have origin/ref
     arts = doc.setdefault("artifacts", [])
