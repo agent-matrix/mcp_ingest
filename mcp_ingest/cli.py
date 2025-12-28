@@ -161,6 +161,7 @@ def cmd_harvest_repo(args: argparse.Namespace) -> None:
         publish=args.publish,
         register=bool(args.register),
         matrixhub_url=args.matrixhub,
+        emit_minimal=bool(args.emit_minimal),
     )
 
     # Convert dataclass-like to plain dict for JSON
@@ -189,6 +190,9 @@ def cmd_harvest_source(args: argparse.Namespace) -> None:
         register=bool(args.register),
         matrixhub=args.matrixhub,
         log_file=args.log_file,
+        emit_minimal=bool(getattr(args, 'emit_minimal', False)),
+        top=int(args.top) if int(args.top) > 0 else None,
+        base_only=bool(getattr(args, 'base_only', False)),
     )
 
     _print_json(summary)
@@ -265,6 +269,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     h.add_argument("--register", action="store_true", help="register to MatrixHub after describe")
     h.add_argument("--matrixhub", default=None, help="MatrixHub base URL if --register is set")
+    h.add_argument(
+        "--emit-minimal",
+        action="store_true",
+        default=True,
+        help="emit minimal manifests for candidates with no detector signal (default: True)",
+    )
     h.set_defaults(func=cmd_harvest_repo)
 
     # harvest-source (README extractor -> multi-repo harvest -> merge)
@@ -294,6 +304,24 @@ def build_parser() -> argparse.ArgumentParser:
         "-v", "--verbose", action="count", default=0, help="Increase verbosity (-v, -vv)"
     )
     hs.add_argument("--log-file", default=None, help="Optional log file path for the orchestrator")
+    hs.add_argument(
+        "--emit-minimal",
+        action="store_true",
+        default=False,
+        help="emit minimal manifests for candidates with no detector signal (default: False for automated harvesting)",
+    )
+    hs.add_argument(
+        "--top",
+        type=int,
+        default=0,
+        help="Only process the first N candidate plans (base repo included). 0 = no limit. Useful for testing.",
+    )
+    hs.add_argument(
+        "--base-only",
+        action="store_true",
+        default=False,
+        help="Only harvest the base repo (skip README link extraction). Recommended for catalog automation.",
+    )
     hs.set_defaults(func=cmd_harvest_source)
 
     return p

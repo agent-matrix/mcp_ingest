@@ -72,6 +72,7 @@ def harvest_repo(
     publish: str | None = None,
     register: bool = False,
     matrixhub_url: str | None = None,
+    emit_minimal: bool = True,
 ) -> HarvestResult:
     """Harvest a repo for MCP servers and emit manifests/index.
 
@@ -87,6 +88,9 @@ def harvest_repo(
         If True, post each manifest into MatrixHub via /catalog/install
     matrixhub_url : str | None
         Required when register=True; MatrixHub base URL
+    emit_minimal : bool
+        If True (default), emit minimal manifests for candidates with no detector signal.
+        If False, skip candidates with no detector signal (useful for automated harvesting).
     """
 
     log.info(
@@ -144,6 +148,9 @@ def harvest_repo(
                 )
 
                 use_minimal = not _has_signal(report)
+                if use_minimal and not emit_minimal:
+                    log.debug("no detector signal for %s — skipping (emit_minimal=False)", cdir)
+                    continue
                 if use_minimal:
                     log.warning("no detector signal for %s — emitting minimal manifest", cdir)
                 else:
@@ -353,6 +360,21 @@ IGNORE_DIR_NAMES = {
     ".next",
     ".nuxt",
     "out",
+    # Common non-server folders
+    "docs",
+    "doc",
+    "documentation",
+    "examples",
+    "example",
+    "sample",
+    "samples",
+    "tests",
+    "test",
+    "bench",
+    "benchmarks",
+    "scripts",
+    ".github",
+    "internal_docs",
 }
 
 
@@ -446,7 +468,33 @@ def _looks_like_py_server_dir(d: Path) -> bool:
 
 
 def _has_package_json(d: Path) -> bool:
-    return (d / "package.json").exists()
+    """Check if directory has package.json with MCP-related dependencies."""
+    pj = d / "package.json"
+    if not pj.exists():
+        return False
+    try:
+        if pj.stat().st_size > 256_000:
+            return False
+        data = json.loads(pj.read_text(encoding="utf-8", errors="ignore"))
+        deps = {}
+        for k in ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies"):
+            v = data.get(k)
+            if isinstance(v, dict):
+                deps.update(v)
+
+        # Accept only if it looks MCP-related
+        needles = (
+            "@modelcontextprotocol/sdk",
+            "modelcontextprotocol",
+            "mcp",  # keep last; broad, but useful
+        )
+        dep_keys = " ".join(deps.keys()).lower()
+        dep_vals = " ".join(str(x) for x in deps.values()).lower()
+        blob = f"{dep_keys} {dep_vals}"
+
+        return any(n in blob for n in needles)
+    except Exception:
+        return False
 
 
 # ----------------------------
