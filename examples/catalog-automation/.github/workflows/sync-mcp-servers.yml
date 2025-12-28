@@ -1,0 +1,200 @@
+name: Sync MCP Servers (Daily)
+
+# This workflow harvests MCP servers from upstream sources (like modelcontextprotocol/servers)
+# and creates a pull request with updated manifests in the catalog.
+#
+# Runs:
+# - Daily at 02:15 UTC (configurable cron schedule)
+# - Manually via workflow_dispatch
+
+on:
+  schedule:
+    - cron: "15 2 * * *"  # Daily at 02:15 UTC
+  workflow_dispatch:
+    inputs:
+      source_repo:
+        description: 'Source repository to harvest from'
+        required: false
+        default: 'https://github.com/modelcontextprotocol/servers'
+      max_workers:
+        description: 'Maximum parallel workers for harvesting'
+        required: false
+        default: '8'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+# Prevent multiple sync jobs from running simultaneously
+concurrency:
+  group: sync-mcp-servers
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout catalog repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: 'pip'
+
+      - name: Install base dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pydantic jsonschema ruff
+
+      - name: Checkout mcp_ingest harvester
+        uses: actions/checkout@v4
+        with:
+          repository: agent-matrix/mcp_ingest
+          ref: main
+          path: .tmp/mcp_ingest
+
+      - name: Install mcp_ingest with dependencies
+        run: |
+          pip install -e ".tmp/mcp_ingest[harvester]"
+
+      - name: Setup HTTP cache directory
+        run: |
+          mkdir -p .cache
+          echo "MCP_INGEST_HTTP_CACHE=.cache" >> $GITHUB_ENV
+
+      - name: Harvest MCP servers from upstream
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SOURCE_REPO="${{ github.event.inputs.source_repo || 'https://github.com/modelcontextprotocol/servers' }}"
+          MAX_WORKERS="${{ github.event.inputs.max_workers || '8' }}"
+
+          echo "🔍 Harvesting from: $SOURCE_REPO"
+          echo "⚙️  Max workers: $MAX_WORKERS"
+
+          # Create harvest output directory
+          rm -rf .harvest
+          mkdir -p .harvest
+
+          # Run mcp-ingest harvest-source command
+          mcp-ingest harvest-source "$SOURCE_REPO" \
+            --out .harvest \
+            --max-parallel "$MAX_WORKERS" \
+            --yes
+
+          echo "✅ Harvest complete"
+          ls -la .harvest/
+
+      - name: Sync harvested data into catalog structure
+        run: |
+          echo "📦 Syncing harvested data into catalog..."
+
+          python scripts/sync_from_harvest.py \
+            --harvest .harvest \
+            --catalog servers \
+            --verbose
+
+          echo "✅ Sync complete"
+
+      - name: Rebuild root index.json
+        run: |
+          echo "📋 Rebuilding root index.json..."
+
+          python scripts/rebuild_index.py \
+            --catalog servers \
+            --out index.json \
+            --base-url "https://raw.githubusercontent.com/${{ github.repository }}/refs/heads/main"
+
+          echo "✅ Index rebuilt"
+
+      - name: Validate catalog structure
+        run: |
+          echo "🔍 Validating catalog structure..."
+          python scripts/validate_catalog.py --catalog servers --index index.json
+          echo "✅ Structure validation passed"
+
+      - name: Validate manifest schemas
+        run: |
+          echo "🔍 Validating manifest schemas..."
+          python scripts/validate_schemas.py --catalog servers --schema schema/manifest.schema.json
+          echo "✅ Schema validation passed"
+
+      - name: Check for changes
+        id: check_changes
+        run: |
+          git add -A
+          if git diff --staged --quiet; then
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "ℹ️  No changes detected"
+          else
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "✨ Changes detected"
+            git diff --staged --stat
+          fi
+
+      - name: Create Pull Request
+        if: steps.check_changes.outputs.has_changes == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: "chore(catalog): sync MCP servers from upstream"
+          title: "chore(catalog): sync MCP servers - ${{ github.run_number }}"
+          body: |
+            ## 🤖 Automated Catalog Sync
+
+            This PR updates the MCP servers catalog with the latest data from upstream sources.
+
+            ### 📊 Summary
+            - **Source**: ${{ github.event.inputs.source_repo || 'https://github.com/modelcontextprotocol/servers' }}
+            - **Triggered**: ${{ github.event_name == 'schedule' && 'Scheduled (daily)' || 'Manual' }}
+            - **Workflow Run**: #${{ github.run_number }}
+            - **Timestamp**: ${{ github.event.head_commit.timestamp }}
+
+            ### 🔄 What Changed
+            - Harvested servers via `mcp-ingest`
+            - Applied deduplication and stable folder mapping
+            - Rebuilt `index.json` with updated manifest URLs
+            - Validated all manifests against schema
+
+            ### ✅ Validation
+            - [x] Structure validation passed
+            - [x] Schema validation passed
+            - [x] All manifests deduplicated
+            - [x] Stable slugs generated
+
+            ### 🚀 Next Steps
+            1. Review the changes in this PR
+            2. Check for any unexpected additions/removals
+            3. Merge to update the canonical catalog
+            4. Matrix Hub will auto-ingest on next sync
+
+            ---
+            *This PR was created automatically by the [sync-mcp-servers workflow](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})*
+          branch: bot/sync-mcp-servers-${{ github.run_number }}
+          delete-branch: true
+          labels: |
+            automated
+            catalog-sync
+            mcp-servers
+          team-reviewers: |
+            catalog-maintainers
+
+      - name: Summary
+        run: |
+          echo "## 📊 Sync Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Has Changes**: ${{ steps.check_changes.outputs.has_changes }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Source**: ${{ github.event.inputs.source_repo || 'https://github.com/modelcontextprotocol/servers' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Workers**: ${{ github.event.inputs.max_workers || '8' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ steps.check_changes.outputs.has_changes }}" == "true" ]; then
+            echo "✅ Pull request created successfully" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "ℹ️ No changes detected, no PR created" >> $GITHUB_STEP_SUMMARY
+          fi

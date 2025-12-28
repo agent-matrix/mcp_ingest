@@ -27,7 +27,8 @@ import re
 import sys
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from urllib.parse import urlparse
+from pathlib import Path
+from urllib.parse import urljoin, urlparse
 
 import httpx
 
@@ -39,6 +40,8 @@ __all__ = [
     "format_targets_as_lines",
     "configure_logging",
     "main",
+    "extract_relative_paths_from_markdown",
+    "resolve_repo_relative_links",
 ]
 
 logger = logging.getLogger(__name__)
@@ -174,6 +177,96 @@ def extract_urls_from_markdown(md: str) -> list[str]:
     deduped_urls = _dedupe_preserve_order(urls)
     logger.info(f"Extracted {len(deduped_urls)} unique URLs from markdown.")
     return deduped_urls
+
+
+# --- Relative link extraction and resolution ------------------------------
+
+# Regex to capture markdown links including relative paths
+_REL_MD_LINK = re.compile(r"\[([^\]]*)\]\((?P<href>[^)]+)\)")
+
+
+def extract_relative_paths_from_markdown(md: str) -> list[str]:
+    """Extract relative paths from markdown links.
+
+    Filters out absolute URLs, mailto links, and anchors.
+    Returns a de-duplicated list of relative paths.
+    """
+    out = []
+    for m in _REL_MD_LINK.finditer(md):
+        href = (m.group("href") or "").strip()
+        if not href:
+            continue
+        # Ignore absolute URLs, mailto, and anchors
+        if "://" in href or href.startswith("#") or href.startswith("mailto:"):
+            continue
+        # Strip surrounding quotes
+        href = href.strip("\"'")
+        # Ignore images and data URIs
+        if href.lower().startswith("data:"):
+            continue
+        # Ignore if it looks like an absolute path to another domain
+        if href.startswith("//"):
+            continue
+        logger.debug(f"Found relative path in markdown: {href}")
+        out.append(href)
+
+    deduped = _dedupe_preserve_order(out)
+    logger.info(f"Extracted {len(deduped)} relative paths from markdown.")
+    return deduped
+
+
+def resolve_repo_relative_links(
+    *,
+    owner: str,
+    repo: str,
+    default_branch: str,
+    rel_links: list[str],
+) -> list[str]:
+    """Resolve relative markdown links into absolute GitHub tree URLs.
+
+    Converts relative paths like:
+      - ./src/server
+      - src/server/README.md
+      - /tree/main/src/server
+
+    Into canonical GitHub tree URLs:
+      - https://github.com/{owner}/{repo}/tree/{default_branch}/src/server
+    """
+    base = f"https://github.com/{owner}/{repo}/tree/{default_branch}/"
+    resolved = []
+
+    for rl in rel_links:
+        # Normalize leading ./ and /
+        rl = rl.lstrip("./")
+        if rl.startswith("/"):
+            rl = rl.lstrip("/")
+
+        # If the link already contains /tree/, extract the path after it
+        if "/tree/" in rl:
+            parts = rl.split("/tree/", 1)
+            if len(parts) == 2:
+                # Skip the ref, take only the path
+                sub_parts = parts[1].split("/", 1)
+                rl = sub_parts[1] if len(sub_parts) > 1 else ""
+
+        # Skip empty paths
+        if not rl:
+            continue
+
+        # Remove file extensions from paths to get directories
+        # (README.md links should point to the directory containing them)
+        if rl.endswith((".md", ".MD", ".txt", ".rst")):
+            rl = str(Path(rl).parent) if Path(rl).parent != Path(".") else ""
+            if not rl or rl == ".":
+                continue
+
+        resolved_url = urljoin(base, rl)
+        logger.debug(f"Resolved relative link '{rl}' to '{resolved_url}'")
+        resolved.append(resolved_url)
+
+    deduped = _dedupe_preserve_order(resolved)
+    logger.info(f"Resolved {len(deduped)} relative links to absolute GitHub URLs.")
+    return deduped
 
 
 # --- README discovery -----------------------------------------------------
@@ -355,6 +448,10 @@ def extract_github_repo_links_from_readme(repo_url: str) -> list[RepoTarget]:
 
     Returns a de-duplicated list of :class:`RepoTarget` instances representing
     likely MCP server repositories mentioned in the README.
+
+    This function now also resolves relative links in the README to absolute GitHub URLs,
+    which is critical for harvesting repos like modelcontextprotocol/servers that use
+    relative paths to reference MCP servers.
     """
     md = fetch_readme_markdown(repo_url)
     if not md:
@@ -363,12 +460,46 @@ def extract_github_repo_links_from_readme(repo_url: str) -> list[RepoTarget]:
         )
         return []
 
+    # Extract absolute URLs (existing functionality)
     urls = extract_urls_from_markdown(md)
     targets: list[RepoTarget] = []
     for u in urls:
         t = _normalize_github_link(u)
         if t:
             targets.append(t)
+
+    # NEW: Also extract and resolve relative links
+    try:
+        owner, repo = _parse_github_repo_url(repo_url)
+        client = GitHubClient()
+        try:
+            default_branch = _default_branch(client, owner, repo) or "main"
+            logger.info(
+                f"Extracting relative links from README and resolving against {owner}/{repo}@{default_branch}"
+            )
+
+            # Extract relative paths from markdown
+            rel_paths = extract_relative_paths_from_markdown(md)
+
+            if rel_paths:
+                logger.info(f"Found {len(rel_paths)} relative paths in README")
+
+                # Resolve them to absolute GitHub tree URLs
+                abs_tree_urls = resolve_repo_relative_links(
+                    owner=owner, repo=repo, default_branch=default_branch, rel_links=rel_paths
+                )
+
+                # Normalize them to RepoTargets
+                for url in abs_tree_urls:
+                    t = _normalize_github_link(url)
+                    if t:
+                        logger.debug(f"Added target from relative link: {t.pretty}")
+                        targets.append(t)
+        finally:
+            client.close()
+    except Exception as e:
+        # Don't fail the entire extraction if relative link resolution fails
+        logger.warning(f"Failed to resolve relative links: {e}", exc_info=True)
 
     # de-dupe by (owner, repo, ref, subpath)
     seen = set()

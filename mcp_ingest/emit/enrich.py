@@ -69,12 +69,23 @@ def enrich_manifest(
     git_ref: str | None = None,  # branch/tag/sha (sha preferred)
     server_relpath_from_repo_root: str | None = None,
     repo_root: Path | None = None,  # used for license guessing
+    detector: str | None = None,  # NEW: detection framework (e.g., "fastmcp", "langchain")
+    confidence: float | None = None,  # NEW: detector confidence score (0.0-1.0)
+    stars: int | None = None,  # NEW: GitHub stars count
+    forks: int | None = None,  # NEW: GitHub forks count
 ) -> dict[str, Any]:
     """
     Load manifest.json, add optional rich fields with safe defaults, and write back.
     Returns the updated manifest dict.
+
+    NEW in this version:
+    - Adds provenance metadata for tracking harvest source and timestamp
+    - Captures detector information and confidence scores
+    - Includes optional GitHub repository metrics (stars, forks)
+    - All additions are backward-compatible and safe
     """
     import json
+    from datetime import datetime, timezone
 
     doc = json.loads(manifest_path.read_text(encoding="utf-8"))
 
@@ -101,6 +112,44 @@ def enrich_manifest(
             doc["license"] = guess_license(repo_root) or ""
         else:
             doc.setdefault("license", "")
+
+    # NEW: Provenance metadata (for tracking harvest source and quality)
+    doc.setdefault("provenance", {})
+    prov = doc["provenance"]
+
+    # Harvest timestamp
+    if "harvested_at" not in prov:
+        prov["harvested_at"] = datetime.now(timezone.utc).isoformat()
+
+    # Source repository information
+    if git_origin:
+        prov.setdefault("source_repo", git_origin)
+    elif homepage:
+        prov.setdefault("source_repo", homepage)
+
+    if git_ref:
+        prov.setdefault("source_ref", git_ref)
+
+    if server_relpath_from_repo_root:
+        prov.setdefault("source_path", server_relpath_from_repo_root)
+
+    # Detection metadata
+    if detector:
+        prov.setdefault("detector", detector)
+
+    if confidence is not None:
+        prov.setdefault("confidence", confidence)
+
+    # Repository metrics (for ranking and display)
+    if stars is not None:
+        prov.setdefault("stars", stars)
+
+    if forks is not None:
+        prov.setdefault("forks", forks)
+
+    # Harvester version (useful for debugging)
+    prov.setdefault("harvester", "mcp-ingest")
+    prov.setdefault("harvester_version", "0.1.0")
 
     # Artifacts: ensure a git entry if we have origin/ref
     arts = doc.setdefault("artifacts", [])
