@@ -21,8 +21,8 @@ EXISTING_DIRS := $(shell for d in $(SRC_DIRS); do [ -d $$d ] && printf "%s " $$d
 
 .PHONY: help setup install install-dev install-docs format lint typecheck test ci build clean clean-all \
 	docs-setup docs-serve docs-build docs-publish docs-open \
-	run-harvester harvest-mcp-servers tools \
-	catalog-example catalog-test catalog-help
+	run-harvester harvest-mcp-servers harvest-mcp-servers-github tools \
+	catalog-example catalog-test catalog-help catalog-sync catalog-sync-watch catalog-sync-status
 
 help: ## Show this help
 	@echo "Targets:"; \
@@ -109,12 +109,17 @@ docs-open: ## Open the built docs in your browser (after docs-build)
 run-harvester: ## Run the Harvester API locally on :8088
 	$(UVICORN) services.harvester.app:app --reload --port 8088
 
-#harvest-mcp-servers: ## Demo: harvest the MCP servers monorepo ZIP to ./dist/servers
-# 	$(BIN)/mcp-ingest harvest-repo \
-# 		https://github.com/modelcontextprotocol/servers/archive/refs/heads/main.zip \
-# 		--out dist/servers
-harvest-mcp-servers: ## Harvest README-linked servers to ./dist/servers
-	$(BIN)/mcp-ingest harvest-source https://github.com/modelcontextprotocol/servers --out dist/servers --yes
+harvest-mcp-servers: ## Harvest MCP servers from Registry API to ./dist/servers
+	@echo "🔄 Harvesting from MCP Registry (recommended)..."
+	$(BIN)/mcp-ingest harvest-registry \
+		--registry-base https://registry.modelcontextprotocol.io \
+		--out dist/servers \
+		--limit 10
+
+harvest-mcp-servers-github: ## (Legacy) Harvest README-linked servers from GitHub
+	@echo "⚠️  Using legacy GitHub harvesting (noisy, not recommended)"
+	$(BIN)/mcp-ingest harvest-source https://github.com/modelcontextprotocol/servers \
+		--out dist/servers --base-only --yes
 
 
 # -----------------------------------------------------------------------------
@@ -134,7 +139,7 @@ tools: ## Print tool versions in the current venv
 # -----------------------------------------------------------------------------
 catalog-help: ## Show catalog automation help
 	@echo "===================================================================="
-	@echo "Catalog Automation Commands"
+	@echo "Catalog Automation Commands (Registry-First)"
 	@echo "===================================================================="
 	@echo ""
 	@echo "Local Setup & Testing:"
@@ -142,9 +147,14 @@ catalog-help: ## Show catalog automation help
 	@echo "  make catalog-test          Test automation locally (safe)"
 	@echo ""
 	@echo "Live Sync to agent-matrix/catalog:"
-	@echo "  make catalog-sync          Trigger GitHub Actions workflow"
+	@echo "  make catalog-sync          Trigger workflow (Registry-first)"
 	@echo "  make catalog-sync-watch    Trigger workflow and watch it run"
 	@echo "  make catalog-sync-status   Check latest workflow runs"
+	@echo ""
+	@echo "Advanced Options:"
+	@echo "  USE_GITHUB=1 make catalog-sync     Enable GitHub enrichment"
+	@echo "  LIMIT=10 make catalog-sync          Test with limited servers"
+	@echo "  REGISTRY=<url> make catalog-sync    Use custom Registry"
 	@echo ""
 	@echo "Documentation:"
 	@echo "  See: CATALOG_DEPLOYMENT.md"
@@ -191,14 +201,28 @@ catalog-test: ## Test catalog automation locally (requires ../catalog)
 		echo "❌ Catalog automation not set up. Run 'make catalog-example' first."
 
 catalog-sync: ## Trigger live catalog sync workflow (requires gh CLI)
-	@echo "🚀 Triggering catalog sync workflow..."
+	@echo "🚀 Triggering catalog sync workflow (Registry-first)..."
 	@if ! command -v gh >/dev/null 2>&1; then \
 		echo "❌ GitHub CLI (gh) not found. Install: https://cli.github.com/"; \
 		exit 1; \
 	fi
-	@gh workflow run sync-to-catalog.yml \
-		-f catalog_repo="agent-matrix/catalog" \
-		-f source_repo="https://github.com/modelcontextprotocol/servers"
+	@CATALOG_REPO=$${CATALOG_REPO:-agent-matrix/catalog}; \
+	REGISTRY_URL=$${REGISTRY:-https://registry.modelcontextprotocol.io}; \
+	ENABLE_GITHUB=$${USE_GITHUB:-false}; \
+	LIMIT_SERVERS=$${LIMIT:-0}; \
+	GITHUB_REPO=$${GITHUB_REPO:-https://github.com/modelcontextprotocol/servers}; \
+	echo "📊 Configuration:"; \
+	echo "  • Catalog: $$CATALOG_REPO"; \
+	echo "  • Registry: $$REGISTRY_URL"; \
+	echo "  • GitHub enrichment: $$ENABLE_GITHUB"; \
+	[ "$$LIMIT_SERVERS" != "0" ] && echo "  • Limit: $$LIMIT_SERVERS servers (testing mode)"; \
+	echo ""; \
+	gh workflow run sync-to-catalog.yml \
+		-f catalog_repo="$$CATALOG_REPO" \
+		-f registry_base_url="$$REGISTRY_URL" \
+		-f enable_github_enrichment="$$ENABLE_GITHUB" \
+		-f github_source_repo="$$GITHUB_REPO" \
+		-f limit_servers="$$LIMIT_SERVERS"
 	@echo "✅ Workflow triggered!"
 	@echo ""
 	@echo "Monitor status:"
@@ -210,14 +234,28 @@ catalog-sync: ## Trigger live catalog sync workflow (requires gh CLI)
 	@echo "  https://github.com/agent-matrix/catalog/pulls"
 
 catalog-sync-watch: ## Trigger catalog sync and watch it run
-	@echo "🚀 Triggering catalog sync workflow..."
+	@echo "🚀 Triggering catalog sync workflow (Registry-first)..."
 	@if ! command -v gh >/dev/null 2>&1; then \
 		echo "❌ GitHub CLI (gh) not found. Install: https://cli.github.com/"; \
 		exit 1; \
 	fi
-	@gh workflow run sync-to-catalog.yml \
-		-f catalog_repo="agent-matrix/catalog" \
-		-f source_repo="https://github.com/modelcontextprotocol/servers"
+	@CATALOG_REPO=$${CATALOG_REPO:-agent-matrix/catalog}; \
+	REGISTRY_URL=$${REGISTRY:-https://registry.modelcontextprotocol.io}; \
+	ENABLE_GITHUB=$${USE_GITHUB:-false}; \
+	LIMIT_SERVERS=$${LIMIT:-0}; \
+	GITHUB_REPO=$${GITHUB_REPO:-https://github.com/modelcontextprotocol/servers}; \
+	echo "📊 Configuration:"; \
+	echo "  • Catalog: $$CATALOG_REPO"; \
+	echo "  • Registry: $$REGISTRY_URL"; \
+	echo "  • GitHub enrichment: $$ENABLE_GITHUB"; \
+	[ "$$LIMIT_SERVERS" != "0" ] && echo "  • Limit: $$LIMIT_SERVERS servers (testing mode)"; \
+	echo ""; \
+	gh workflow run sync-to-catalog.yml \
+		-f catalog_repo="$$CATALOG_REPO" \
+		-f registry_base_url="$$REGISTRY_URL" \
+		-f enable_github_enrichment="$$ENABLE_GITHUB" \
+		-f github_source_repo="$$GITHUB_REPO" \
+		-f limit_servers="$$LIMIT_SERVERS"
 	@echo "⏳ Waiting for workflow to start..."
 	@sleep 5
 	@echo "👀 Watching workflow run..."

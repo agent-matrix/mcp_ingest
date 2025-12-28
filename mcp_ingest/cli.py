@@ -35,6 +35,12 @@ try:  # pragma: no cover - optional import until feature lands
 except Exception:  # pragma: no cover
     harvest_source = None  # type: ignore
 
+# Optional (Stage-3+: Registry API harvester)
+try:  # pragma: no cover - optional import
+    from .registry.harvest import harvest_registry  # type: ignore
+except Exception:  # pragma: no cover
+    harvest_registry = None  # type: ignore
+
 
 # ------------------------- helpers -------------------------
 
@@ -202,6 +208,21 @@ def cmd_harvest_source(args: argparse.Namespace) -> None:
         raise SystemExit(2)
 
 
+def cmd_harvest_registry(args: argparse.Namespace) -> None:
+    if harvest_registry is None:  # pragma: no cover
+        raise SystemExit("harvest-registry is unavailable: httpx dependency required (pip install httpx)")
+
+    index_path = harvest_registry(
+        registry_base_url=args.registry_base,
+        out_dir=args.out,
+        updated_since=args.updated_since,
+        top=int(args.top) if int(args.top) > 0 else None,
+        limit=int(args.limit),
+    )
+
+    _print_json({"ok": True, "index_path": str(index_path)})
+
+
 # ------------------------- parser -------------------------
 
 
@@ -323,6 +344,36 @@ def build_parser() -> argparse.ArgumentParser:
         help="Only harvest the base repo (skip README link extraction). Recommended for catalog automation.",
     )
     hs.set_defaults(func=cmd_harvest_source)
+
+    # harvest-registry (Registry API → catalog)
+    hr = sub.add_parser(
+        "harvest-registry",
+        help="Harvest MCP servers from Registry API (recommended for production catalogs)",
+    )
+    hr.add_argument(
+        "--registry-base",
+        default="https://registry.modelcontextprotocol.io",
+        help="Base URL of the MCP Registry API",
+    )
+    hr.add_argument("--out", required=True, help="Output directory for catalog")
+    hr.add_argument(
+        "--updated-since",
+        default=None,
+        help="ISO timestamp for incremental sync (e.g., 2025-12-27T00:00:00Z)",
+    )
+    hr.add_argument(
+        "--top",
+        type=int,
+        default=0,
+        help="Limit to first N servers (0 = no limit). Useful for testing.",
+    )
+    hr.add_argument(
+        "--limit",
+        type=int,
+        default=10,
+        help="Page size for API pagination (default: 10, adjust based on registry limits)",
+    )
+    hr.set_defaults(func=cmd_harvest_registry)
 
     return p
 
