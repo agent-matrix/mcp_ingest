@@ -158,15 +158,42 @@ def harvest_registry(
             log.error("Failed to process server %s: %s", server_name, e, exc_info=True)
             continue
 
+    # Dedupe items by manifest_path (latest wins based on version)
+    # This fixes the issue where multiple server versions point to the same manifest
+    items_by_path: dict[str, dict[str, Any]] = {}
+    for item in items:
+        path = item["manifest_path"]
+        if path not in items_by_path:
+            items_by_path[path] = item
+        else:
+            # Keep the item with the higher version (semantic version comparison would be better)
+            existing_version = items_by_path[path].get("version") or ""
+            new_version = item.get("version") or ""
+            if new_version >= existing_version:
+                items_by_path[path] = item
+
+    deduped_items = list(items_by_path.values())
+
+    # Count active vs deprecated from unique manifests only
+    active_count = sum(1 for item in deduped_items if item["status"] == "active")
+    deprecated_count = sum(1 for item in deduped_items if item["status"] == "deprecated")
+    disabled_count = sum(1 for item in deduped_items if item["status"] == "disabled")
+
     log.info(
-        "Harvest complete: %d servers, %d manifests (%d active, %d deprecated)",
+        "Harvest complete: %d servers, %d unique manifests (%d active, %d deprecated, %d disabled)",
         server_count,
-        manifest_count,
-        len(manifests_active),
-        manifest_count - len(manifests_active),
+        len(deduped_items),
+        active_count,
+        deprecated_count,
+        disabled_count,
     )
 
     # Build top-level index.json (MatrixHub-friendly)
+    # Only include active manifests in the manifests[] stream for ingestion
+    active_manifest_paths = [
+        item["manifest_path"] for item in deduped_items if item["status"] == "active"
+    ]
+
     index = {
         "generated_at": utc_now_iso(),
         "source": {
@@ -176,12 +203,13 @@ def harvest_registry(
             "updated_since": updated_since,
         },
         "counts": {
-            "total_items": len(items),
-            "active_manifests": len(set(manifests_active)),
-            "deprecated": len(items) - len(set(manifests_active)),
+            "total_items": len(deduped_items),
+            "active_manifests": active_count,
+            "deprecated": deprecated_count,
+            "disabled": disabled_count,
         },
-        "items": sorted(items, key=lambda x: (x["id"], x["manifest_path"])),
-        "manifests": sorted(set(manifests_active)),
+        "items": sorted(deduped_items, key=lambda x: (x["id"], x["manifest_path"])),
+        "manifests": sorted(active_manifest_paths),
     }
 
     index_path = out_dir / "index.json"

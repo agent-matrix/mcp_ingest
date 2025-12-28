@@ -51,7 +51,7 @@ def pick_links(server: dict[str, Any]) -> dict[str, Any]:
     return links
 
 
-def build_lifecycle(status: str) -> dict[str, Any]:
+def build_lifecycle(status: str, reason: str | None = None) -> dict[str, Any]:
     """
     Build lifecycle object, omitting None values for schema compliance.
 
@@ -60,11 +60,13 @@ def build_lifecycle(status: str) -> dict[str, Any]:
     """
     lifecycle: dict[str, Any] = {"status": status}
     # Only include optional fields if they have values
-    # deprecated_at, reason, replaced_by are omitted when None
+    if reason:
+        lifecycle["reason"] = reason
+    # deprecated_at, replaced_by are omitted when None
     return lifecycle
 
 
-def to_stdio_exec(pkg: dict[str, Any]) -> dict[str, Any]:
+def to_stdio_exec(pkg: dict[str, Any]) -> dict[str, Any] | None:
     """
     Convert registry package to exec command for STDIO transport.
 
@@ -74,6 +76,8 @@ def to_stdio_exec(pkg: dict[str, Any]) -> dict[str, Any]:
     - version
     - runtimeHint (uvx/npx/docker/...)
     - runtimeArguments []
+
+    Returns None if package lacks required metadata (runtimeHint or identifier).
     """
     rt = (pkg.get("runtimeHint") or "").strip()
     args = pkg.get("runtimeArguments") or []
@@ -87,8 +91,8 @@ def to_stdio_exec(pkg: dict[str, Any]) -> dict[str, Any]:
     if rt and ident:
         return {"cmd": [rt, *args, str(ident)], "env": {}}
 
-    # Fallback for incomplete metadata
-    return {"cmd": ["echo", "missing-runtimeHint-or-identifier"], "env": {}}
+    # Return None for incomplete metadata (caller will mark as disabled)
+    return None
 
 
 def normalize_registry_server(
@@ -144,6 +148,16 @@ def normalize_registry_server(
         variant_key = f"{server_name}|package|{reg_type}|{identifier}|{pkg_version}"
         mid = stable_manifest_id(server_name, "STDIO", variant_key)
 
+        # Check if we can build a valid exec command
+        exec_cmd = to_stdio_exec(pkg)
+        if exec_cmd is None:
+            # Missing runtimeHint or identifier - mark as disabled
+            manifest_status = "disabled"
+            lifecycle_reason = "Missing required package metadata (runtimeHint or identifier)"
+        else:
+            manifest_status = status
+            lifecycle_reason = None
+
         manifest = {
             "type": "mcp_server",
             "id": mid,
@@ -151,7 +165,12 @@ def normalize_registry_server(
             "title": title,
             "description": description,
             "version": version,
-            "mcp_registration": {"server": {"transport": "STDIO", "exec": to_stdio_exec(pkg)}},
+            "mcp_registration": {
+                "server": {
+                    "transport": "STDIO",
+                    "exec": exec_cmd or {"cmd": [], "env": {}},
+                }
+            },
             "packages": [pkg],
             "links": links,
             "provenance": {
@@ -163,7 +182,7 @@ def normalize_registry_server(
                 "updated_at": updated_at,
                 "identity_key": short_hash(variant_key),
             },
-            "lifecycle": build_lifecycle(status),
+            "lifecycle": build_lifecycle(manifest_status, lifecycle_reason),
             "harvest": {"seen_in_latest_run": True, "last_seen_at": utc_now_iso()},
         }
 
