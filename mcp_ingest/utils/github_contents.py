@@ -73,7 +73,7 @@ def list_dirs(
 
                 # Handle rate limiting with exponential backoff
                 if r.status_code == 403:
-                    wait_time = 2 ** attempt
+                    wait_time = 2**attempt
                     logger.warning(
                         f"Rate limited by GitHub API (attempt {attempt + 1}/{retry_count}), "
                         f"waiting {wait_time}s"
@@ -108,7 +108,7 @@ def list_dirs(
                         f"Failed to list dirs in {owner}/{repo}@{ref}:{path}: {e}"
                     ) from e
                 logger.warning(f"HTTP error (attempt {attempt + 1}/{retry_count}): {e}")
-                time.sleep(2 ** attempt)
+                time.sleep(2**attempt)
 
             except Exception as e:
                 raise GitHubContentsError(
@@ -116,9 +116,7 @@ def list_dirs(
                 ) from e
 
         # If we exhausted retries
-        raise GitHubContentsError(
-            f"Exhausted retries listing dirs in {owner}/{repo}@{ref}:{path}"
-        )
+        raise GitHubContentsError(f"Exhausted retries listing dirs in {owner}/{repo}@{ref}:{path}")
 
 
 def enumerate_monorepo_servers(
@@ -181,7 +179,5 @@ def enumerate_monorepo_servers(
             logger.warning(f"Could not enumerate root '{root}': {e}")
             continue
 
-    logger.info(
-        f"Enumerated {len(all_dirs)} potential server directories in {owner}/{repo}@{ref}"
-    )
+    logger.info(f"Enumerated {len(all_dirs)} potential server directories in {owner}/{repo}@{ref}")
     return all_dirs
