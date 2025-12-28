@@ -146,17 +146,18 @@ jobs:
             echo "✅ Manual index validation"
             if [ -f index.json ]; then
               # Basic validation: check JSON is valid and has required fields
-              python -c "
-import json
-import sys
-with open('index.json') as f:
-    idx = json.load(f)
-assert 'manifests' in idx, 'Missing manifests field'
-assert isinstance(idx['manifests'], list), 'manifests must be a list'
-assert 'source' in idx, 'Missing source field'
-assert idx['source'].get('kind') == 'mcp-registry', 'Source must be mcp-registry'
-print(f\"✅ Index valid: {len(idx['manifests'])} manifests\")
-" || (echo "❌ Index validation failed" && exit 1)
+              python <<'PYEOF' || (echo "❌ Index validation failed" && exit 1)
+              import json
+              import sys
+              with open('index.json') as f:
+                  idx = json.load(f)
+              assert 'manifests' in idx or 'items' in idx, 'Missing manifests or items field'
+              manifests = idx.get('manifests') or idx.get('items', [])
+              assert isinstance(manifests, list), 'manifests/items must be a list'
+              assert 'source' in idx, 'Missing source field'
+              assert idx['source'].get('kind') == 'mcp-registry', 'Source must be mcp-registry'
+              print(f"✅ Index valid: {len(manifests)} manifests")
+              PYEOF
             fi
           fi
 
