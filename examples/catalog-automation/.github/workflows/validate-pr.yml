@@ -1,0 +1,70 @@
+name: Validate Catalog PR
+
+# Runs validation checks on pull requests that modify the catalog
+# Ensures all changes meet quality standards before merging
+
+on:
+  pull_request:
+    paths:
+      - 'servers/**'
+      - 'index.json'
+      - 'schema/**'
+      - 'scripts/**'
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: 'pip'
+
+      - name: Install validation dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install jsonschema pydantic ruff
+
+      - name: Validate catalog structure
+        run: |
+          echo "🔍 Validating catalog structure..."
+          python scripts/validate_catalog.py --catalog servers --index index.json
+
+      - name: Validate manifest schemas
+        run: |
+          echo "🔍 Validating manifest schemas..."
+          python scripts/validate_schemas.py --catalog servers --schema schema/manifest.schema.json
+
+      - name: Lint Python scripts
+        run: |
+          echo "🔍 Linting Python scripts..."
+          ruff check scripts/
+
+      - name: Check for duplicate IDs
+        run: |
+          echo "🔍 Checking for duplicate manifest IDs..."
+          python scripts/check_duplicates.py --catalog servers
+
+      - name: Check index.json consistency
+        run: |
+          echo "🔍 Validating index.json consistency..."
+          python scripts/check_index_consistency.py --catalog servers --index index.json
+
+      - name: Summary
+        run: |
+          echo "## ✅ All Validations Passed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- Structure validation: ✅" >> $GITHUB_STEP_SUMMARY
+          echo "- Schema validation: ✅" >> $GITHUB_STEP_SUMMARY
+          echo "- Duplicate check: ✅" >> $GITHUB_STEP_SUMMARY
+          echo "- Index consistency: ✅" >> $GITHUB_STEP_SUMMARY
