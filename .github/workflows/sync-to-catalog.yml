@@ -180,64 +180,82 @@ jobs:
             echo "deprecated=0" >> $GITHUB_OUTPUT
           fi
 
-      - name: Create pull request
+      - name: Push changes and create PR
         if: steps.changes.outputs.has_changes == 'true'
-        uses: peter-evans/create-pull-request@v6
-        with:
-          token: ${{ secrets.CATALOG_PAT || secrets.GITHUB_TOKEN }}
-          path: catalog
-          commit-message: "chore(sync): update MCP servers catalog from Registry"
-          title: "chore(sync): automated catalog sync from MCP Registry"
-          body: |
-            ## Automated Catalog Sync
+        env:
+          GH_TOKEN: ${{ secrets.CATALOG_PAT || secrets.GITHUB_TOKEN }}
+          CATALOG_REPO: ${{ github.event.inputs.catalog_repo || 'agent-matrix/catalog' }}
+        run: |
+          cd catalog
 
-            This PR updates the MCP servers catalog using **Registry-first harvesting** from `mcp_ingest`.
+          # Configure git
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-            ### 📊 Catalog Statistics
-            - **Total items**: ${{ steps.stats.outputs.total }}
-            - **Active manifests**: ${{ steps.stats.outputs.active }}
-            - **Deprecated**: ${{ steps.stats.outputs.deprecated }}
+          # Create branch with timestamp for uniqueness
+          BRANCH="bot/sync-mcp-registry-$(date +%s)"
+          git checkout -b "$BRANCH"
 
-            ### 🎯 Source of Truth
-            - **Primary**: [MCP Registry API](${{ github.event.inputs.registry_base_url || 'https://registry.modelcontextprotocol.io' }})
-            - **Endpoint**: `/v0.1/servers`
-            - **Optional GitHub enrichment**: ${{ github.event.inputs.enable_github_enrichment == 'true' && '✅ Enabled' || '❌ Disabled' }}
+          # Stage all changes
+          git add -A
 
-            ### 🚀 What's New
-            - ✅ **Registry-first harvesting** (canonical source)
-            - ✅ **Clean lifecycle states** (active/deprecated/deleted)
-            - ✅ **Real transport metadata** (no guessing)
-            - ✅ **Stable manifest IDs** (DB-safe upserts)
-            - ✅ **Relative paths only** (portable across environments)
+          # Commit
+          git commit -m "chore(sync): update MCP servers catalog from Registry
 
-            ### 📝 Workflow Details
-            - **Triggered by**: ${{ github.event_name }}
-            - **Run**: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-            - **Commit**: ${{ github.sha }}
+          📊 Statistics:
+          - Total items: ${{ steps.stats.outputs.total }}
+          - Active manifests: ${{ steps.stats.outputs.active }}
+          - Deprecated: ${{ steps.stats.outputs.deprecated }}
 
-            ### ✨ Quality Improvements
-            - No more "no detector signal" spam
-            - No more junk candidates (node_modules/examples/docs)
-            - Official package metadata (uvx/npx/docker)
-            - Proper variable/input tracking
+          🎯 Source: ${{ github.event.inputs.registry_base_url || 'https://registry.modelcontextprotocol.io' }}
 
-            ### 📂 Catalog Structure
-            ```
-            servers/
-              <namespace>/
-                <variant-id>/
-                  manifest.json  (MatrixHub-compatible)
-            index.json           (active manifests only)
-            ```
+          Automated by: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
-            **Powered by:** [mcp_ingest](https://github.com/${{ github.repository }}) @ ${{ github.sha }}
-          branch: bot/sync-mcp-registry
-          delete-branch: true
-          labels: |
-            automated
-            sync
-            catalog
-            registry
+          # Push to remote (using GH_TOKEN)
+          git push origin "$BRANCH"
+
+          # Create PR body
+          cat > /tmp/pr_body.md <<'PRBODY'
+          ## Automated Catalog Sync
+
+          This PR updates the MCP servers catalog using **Registry-first harvesting** from mcp_ingest.
+
+          ### 📊 Catalog Statistics
+          - **Total items**: ${{ steps.stats.outputs.total }}
+          - **Active manifests**: ${{ steps.stats.outputs.active }}
+          - **Deprecated**: ${{ steps.stats.outputs.deprecated }}
+
+          ### 🎯 Source of Truth
+          - **Primary**: [MCP Registry API](${{ github.event.inputs.registry_base_url || 'https://registry.modelcontextprotocol.io' }})
+          - **Endpoint**: /v0.1/servers
+          - **Optional GitHub enrichment**: ${{ github.event.inputs.enable_github_enrichment == 'true' && '✅ Enabled' || '❌ Disabled' }}
+
+          ### 🚀 What's New
+          - ✅ **Registry-first harvesting** (canonical source)
+          - ✅ **Clean lifecycle states** (active/deprecated/deleted)
+          - ✅ **Real transport metadata** (no guessing)
+          - ✅ **Stable manifest IDs** (DB-safe upserts)
+          - ✅ **Relative paths only** (portable across environments)
+
+          ### 📝 Workflow Details
+          - **Triggered by**: ${{ github.event_name }}
+          - **Run**: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          - **Commit**: ${{ github.sha }}
+
+          ### ✨ Quality Improvements
+          - No more "no detector signal" spam
+          - No more junk candidates (node_modules/examples/docs)
+          - Official package metadata (uvx/npx/docker)
+          - Proper variable/input tracking
+
+          **Powered by:** [mcp_ingest](https://github.com/${{ github.repository }}) @ ${{ github.sha }}
+          PRBODY
+
+          # Create PR using gh CLI
+          gh pr create \
+            --title "chore(sync): automated catalog sync from MCP Registry" \
+            --body-file /tmp/pr_body.md \
+            --label "automated,sync,catalog,registry"
 
       - name: Summary
         run: |
