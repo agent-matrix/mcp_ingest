@@ -123,7 +123,7 @@ def normalize_registry_server(
     variables = inputs.get("variables") or {}
 
     # 1) Process packages => STDIO manifests
-    for pkg in (server.get("packages") or []):
+    for pkg in server.get("packages") or []:
         reg_type = pkg.get("registryType")
         identifier = pkg.get("identifier")
         pkg_version = pkg.get("version")
@@ -172,7 +172,7 @@ def normalize_registry_server(
         manifests.append(manifest)
 
     # 2) Process remotes => SSE/WS manifests
-    for remote in (server.get("remotes") or []):
+    for remote in server.get("remotes") or []:
         rtype = (remote.get("transport") or remote.get("type") or "").upper()
         url = remote.get("url")
 

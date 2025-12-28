@@ -108,7 +108,9 @@ def main() -> None:
         manifest_paths_set = set(manifest_paths)
         for ap in active_paths:
             if ap not in manifest_paths_set:
-                print(f"❌ active manifest missing from index.json.manifests: {ap}", file=sys.stderr)
+                print(
+                    f"❌ active manifest missing from index.json.manifests: {ap}", file=sys.stderr
+                )
                 errors += 1
 
         # Check that all manifests list entries are active

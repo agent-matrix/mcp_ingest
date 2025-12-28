@@ -154,7 +154,12 @@ def _plans_from_targets(repo_url: str, targets: Sequence[RepoTarget]) -> list[Ca
 
 
 def _run_plan(
-    plan: CandidatePlan, *, out_root: Path, register: bool, matrixhub: str | None, emit_minimal: bool = False
+    plan: CandidatePlan,
+    *,
+    out_root: Path,
+    register: bool,
+    matrixhub: str | None,
+    emit_minimal: bool = False,
 ) -> CandidateResult:
     plan_out = out_root / _slug(plan.display)
     plan_out.mkdir(parents=True, exist_ok=True)
@@ -167,7 +172,9 @@ def _run_plan(
 
     try:
         if plan.kind == "repo":
-            res: HarvestResult = harvest_repo(plan.repo_url, out_dir=plan_out, emit_minimal=emit_minimal)
+            res: HarvestResult = harvest_repo(
+                plan.repo_url, out_dir=plan_out, emit_minimal=emit_minimal
+            )
             manifests = [str(Path(p)) for p in (res.manifests or [])]
             idx_path = str(res.index_path) if res.index_path else None
             # Optional registration
@@ -185,7 +192,9 @@ def _run_plan(
                 local = Path(root) / (plan.subpath or "")
                 if not local.exists():
                     raise FileNotFoundError(f"subpath not found in archive: {plan.subpath}")
-                res: HarvestResult = harvest_repo(str(local), out_dir=plan_out, emit_minimal=emit_minimal)
+                res: HarvestResult = harvest_repo(
+                    str(local), out_dir=plan_out, emit_minimal=emit_minimal
+                )
                 manifests = [str(Path(p)) for p in (res.manifests or [])]
                 idx_path = str(res.index_path) if res.index_path else None
                 if register and matrixhub and manifests:
@@ -292,7 +301,14 @@ def harvest_source(
     results: list[CandidateResult] = []
     with _fut.ThreadPoolExecutor(max_workers=max_parallel) as ex:
         futs = [
-            ex.submit(_run_plan, plan, out_root=out_root, register=register, matrixhub=matrixhub, emit_minimal=emit_minimal)
+            ex.submit(
+                _run_plan,
+                plan,
+                out_root=out_root,
+                register=register,
+                matrixhub=matrixhub,
+                emit_minimal=emit_minimal,
+            )
             for plan in plans
         ]
         for f in _fut.as_completed(futs):
