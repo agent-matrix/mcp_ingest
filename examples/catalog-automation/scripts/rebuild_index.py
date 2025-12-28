@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -60,7 +60,7 @@ def main() -> None:
     # Build index
     index = {
         "version": "1.0.0",
-        "generated_at": datetime.now(datetime.UTC).isoformat(),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
         "manifest_count": len(manifests),
         "manifests": manifests,
     }

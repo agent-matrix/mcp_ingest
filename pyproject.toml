@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mcp-ingest"
-version = "0.1.1"
+version = "0.1.2"
 description = "SDK + CLI to describe, validate, and register MCP servers into MatrixHub"
 readme = "README.md"
 requires-python = ">=3.11,<3.13"
@@ -66,6 +66,7 @@ ignore = [
     "E501",  # Line too long
     "E402",  # Module level import not at top of file
     "UP022", # Prefer `capture_output` for subprocess
+    "UP017", # Use datetime.UTC (requires Python 3.12+, we support 3.11)
     "E731",  # Do not assign a `lambda` expression
     "N805",  # False positive: first argument of a method should be `self`
 ]

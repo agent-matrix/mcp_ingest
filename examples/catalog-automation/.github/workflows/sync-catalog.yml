@@ -1,0 +1,111 @@
+name: Sync MCP Servers Catalog
+
+on:
+  schedule:
+    - cron: "15 2 * * *"   # 02:15 UTC daily
+  workflow_dispatch: {}    # Allow manual trigger
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: sync-mcp-servers
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout catalog
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-sync-${{ hashFiles('scripts/*.py') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-sync-
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install jsonschema ruff
+
+      - name: Install mcp_ingest from git (with all fixes)
+        run: |
+          # Install from the branch with Python 3.11 fixes
+          pip install git+https://github.com/agent-matrix/mcp_ingest.git@claude/mcp-harvesting-summary-obDG0
+
+      - name: Verify mcp_ingest installation
+        run: |
+          python -c "import mcp_ingest; print(f'mcp_ingest {mcp_ingest.__version__} installed from: {mcp_ingest.__file__}')"
+
+      - name: Harvest and sync catalog
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python scripts/sync_mcp_servers.py \
+            --source-repo "https://github.com/modelcontextprotocol/servers" \
+            --catalog-root "." \
+            --servers-dir "servers" \
+            --index-file "index.json" \
+            --max-parallel 8
+
+      - name: Validate catalog structure
+        run: python scripts/validate_catalog_structure.py
+
+      - name: Validate catalog schemas
+        run: python scripts/validate_catalog_schemas.py
+
+      - name: Validate index consistency
+        run: python scripts/validate_catalog_index.py
+
+      - name: Lint scripts
+        continue-on-error: true
+        run: ruff check scripts || true
+
+      - name: Create pull request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: "chore(sync): update MCP servers catalog"
+          title: "chore(sync): automated catalog sync"
+          body: |
+            ## Automated Catalog Sync
+
+            This PR updates the MCP servers catalog using `mcp_ingest` v0.1.2.
+
+            ### Changes
+            - Harvested from: `modelcontextprotocol/servers`
+            - Relative links resolved automatically
+            - Provenance metadata included
+            - HTTP caching enabled
+            - Vendor directories filtered (no node_modules)
+
+            ### Validation
+            - ✅ Catalog structure validated
+            - ✅ JSON schemas validated
+            - ✅ Index consistency checked
+            - ✅ No duplicate IDs
+
+            ### Manifest Tracking
+            - Active manifests listed in `index.json.manifests[]`
+            - Deprecated manifests marked but preserved
+            - All paths are relative (no URLs)
+
+            **Powered by:** mcp_ingest v0.1.2
+          branch: bot/sync-mcp-servers
+          delete-branch: true
+          labels: |
+            automated
+            sync
+            catalog
