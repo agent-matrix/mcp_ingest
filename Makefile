@@ -21,7 +21,8 @@ EXISTING_DIRS := $(shell for d in $(SRC_DIRS); do [ -d $$d ] && printf "%s " $$d
 
 .PHONY: help setup install install-dev install-docs format lint typecheck test ci build clean clean-all \
 	docs-setup docs-serve docs-build docs-publish docs-open \
-	run-harvester harvest-mcp-servers tools
+	run-harvester harvest-mcp-servers tools \
+	catalog-example catalog-test catalog-help
 
 help: ## Show this help
 	@echo "Targets:"; \
@@ -129,3 +130,62 @@ tools: ## Print tool versions in the current venv
 	@echo "mypy:" $$($(MYPY) --version 2>/dev/null || echo 'missing')
 	@echo "pytest:" $$($(PYTEST) --version 2>/dev/null || echo 'missing')
 	@echo "mkdocs:" $$($(MKDOCS) --version 2>/dev/null || echo 'missing')
+
+# -----------------------------------------------------------------------------
+# Catalog Automation Examples (for agent-matrix/catalog)
+# -----------------------------------------------------------------------------
+catalog-help: ## Show catalog automation help
+	@echo "===================================================================="
+	@echo "Catalog Automation Examples"
+	@echo "===================================================================="
+	@echo ""
+	@echo "These commands demonstrate the catalog automation reference"
+	@echo "implementation in examples/catalog-automation/"
+	@echo ""
+	@echo "Commands:"
+	@echo "  make catalog-example   Copy automation files to ../catalog"
+	@echo "  make catalog-test      Test automation locally (safe)"
+	@echo "  make catalog-help      This help message"
+	@echo ""
+	@echo "Documentation:"
+	@echo "  See: examples/catalog-automation/README.md"
+	@echo "  See: docs/catalog-automation.md"
+	@echo ""
+	@echo "After copying to your catalog repo, use:"
+	@echo "  cd ../catalog"
+	@echo "  make sync         # Full sync (harvest → dedupe → validate)"
+	@echo "  make help         # See all catalog commands"
+	@echo ""
+
+catalog-example: ## Copy catalog automation to ../catalog directory
+	@if [ ! -d "../catalog" ]; then \
+		echo "❌ Directory ../catalog not found"; \
+		echo "   Clone it first: git clone https://github.com/agent-matrix/catalog ../catalog"; \
+		exit 1; \
+	fi
+	@echo "📦 Copying catalog automation files to ../catalog..."
+	@cp -r examples/catalog-automation/.github/workflows/*.yml ../catalog/.github/workflows/ 2>/dev/null || \
+		(mkdir -p ../catalog/.github/workflows && cp examples/catalog-automation/.github/workflows/*.yml ../catalog/.github/workflows/)
+	@mkdir -p ../catalog/scripts && cp examples/catalog-automation/scripts/*.py ../catalog/scripts/
+	@mkdir -p ../catalog/schema && cp examples/catalog-automation/schema/*.json ../catalog/schema/
+	@cp examples/catalog-automation/Makefile ../catalog/ 2>/dev/null || echo "Makefile exists, skipping"
+	@cp examples/catalog-automation/test-workflow-locally.sh ../catalog/ 2>/dev/null || true
+	@chmod +x ../catalog/scripts/*.py ../catalog/test-workflow-locally.sh 2>/dev/null || true
+	@echo "✅ Files copied to ../catalog"
+	@echo ""
+	@echo "Next steps:"
+	@echo "  cd ../catalog"
+	@echo "  make install    # Install dependencies"
+	@echo "  make help       # See all commands"
+	@echo "  make sync       # Run a sync"
+	@echo ""
+
+catalog-test: ## Test catalog automation locally (requires ../catalog)
+	@if [ ! -d "../catalog" ]; then \
+		echo "❌ Directory ../catalog not found"; \
+		echo "   Clone it first: git clone https://github.com/agent-matrix/catalog ../catalog"; \
+		exit 1; \
+	fi
+	@echo "🧪 Testing catalog automation..."
+	@cd ../catalog && make test-sync 2>/dev/null || \
+		echo "❌ Catalog automation not set up. Run 'make catalog-example' first."

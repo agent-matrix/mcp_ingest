@@ -21,8 +21,9 @@ theme:
 nav:
   - Home: index.md
   - Quickstart: quickstart.md
-  - Tutorials:
-      - Harvest: tutorials/harvest-source.md
+  - Guides:
+      - Harvest Source: harvest-source.md
+      - Catalog Automation: catalog-automation.md
   - API: api.md
   - CLI: cli.md
   - SDK: sdk.md
