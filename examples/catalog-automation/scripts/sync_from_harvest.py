@@ -98,7 +98,7 @@ def main() -> None:
 
     # Sync unique manifests to catalog
     synced = 0
-    for fp, manifest_path in manifests_by_fp.items():
+    for _fp, manifest_path in manifests_by_fp.items():
         data = json.loads(manifest_path.read_text(encoding="utf-8"))
 
         # Generate stable slug for folder name

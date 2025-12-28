@@ -16,7 +16,6 @@ import json
 import sys
 from pathlib import Path
 
-
 REQUIRED_MANIFEST_FIELDS = ["id", "name", "type"]
 
 
@@ -39,7 +38,7 @@ def main() -> None:
         try:
             index_data = json.loads(index_path.read_text(encoding="utf-8"))
             if "manifests" not in index_data:
-                print(f"❌ index.json missing 'manifests' field", file=sys.stderr)
+                print("❌ index.json missing 'manifests' field", file=sys.stderr)
                 errors += 1
         except Exception as e:
             print(f"❌ Invalid index.json: {e}", file=sys.stderr)

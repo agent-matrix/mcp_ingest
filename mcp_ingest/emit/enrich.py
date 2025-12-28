@@ -85,7 +85,7 @@ def enrich_manifest(
     - All additions are backward-compatible and safe
     """
     import json
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     doc = json.loads(manifest_path.read_text(encoding="utf-8"))
 
@@ -119,7 +119,7 @@ def enrich_manifest(
 
     # Harvest timestamp
     if "harvested_at" not in prov:
-        prov["harvested_at"] = datetime.now(timezone.utc).isoformat()
+        prov["harvested_at"] = datetime.now(datetime.UTC).isoformat()
 
     # Source repository information
     if git_origin:

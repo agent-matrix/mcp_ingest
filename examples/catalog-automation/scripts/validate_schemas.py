@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 try:
-    from jsonschema import Draft202012Validator, ValidationError
+    from jsonschema import Draft202012Validator
 except ImportError:
     print("❌ jsonschema package required: pip install jsonschema", file=sys.stderr)
     sys.exit(1)
