@@ -24,12 +24,14 @@ try:
 except ImportError:
     print("❌ mcp_ingest not installed. Run: pip install mcp-ingest")
     import sys
+
     sys.exit(1)
 
 
 # ---------------------------
 # Utilities
 # ---------------------------
+
 
 def now_iso() -> str:
     """Get current UTC timestamp in ISO format."""
@@ -98,12 +100,14 @@ def resolve_manifest_path(harvest_out: Path, mp: str) -> Path | None:
 # Catalog key for deduplication
 # ---------------------------
 
+
 @dataclass(frozen=True)
 class CatalogKey:
     """Stable key for identifying unique servers."""
-    repo_full: str      # owner/repo
-    subpath: str        # empty string or 'src/...'
-    transport: str      # SSE/STDIO/WS/UNKNOWN
+
+    repo_full: str  # owner/repo
+    subpath: str  # empty string or 'src/...'
+    transport: str  # SSE/STDIO/WS/UNKNOWN
 
 
 def extract_source_repo_path(manifest: dict[str, Any]) -> tuple[str, str]:
@@ -126,6 +130,7 @@ def extract_transport(manifest: dict[str, Any]) -> str:
 # ---------------------------
 # Lifecycle tracking
 # ---------------------------
+
 
 def mark_active_seen(manifest: dict[str, Any]) -> dict[str, Any]:
     """Mark manifest as active and seen in current run."""
@@ -170,6 +175,7 @@ def mark_deprecated(manifest: dict[str, Any], reason: str) -> dict[str, Any]:
 # Existing catalog scanning
 # ---------------------------
 
+
 def iter_existing_manifests(servers_dir: Path) -> Iterable[Path]:
     """Yield all manifest.json files in servers directory."""
     yield from servers_dir.glob("**/manifest.json")
@@ -195,6 +201,7 @@ def load_existing_by_key(servers_dir: Path) -> dict[CatalogKey, Path]:
 # ---------------------------
 # Path building
 # ---------------------------
+
 
 def build_group_dir(servers_dir: Path, repo_full: str) -> Path:
     """Build group directory: servers/<owner>-<repo>."""
@@ -226,6 +233,7 @@ def rebuild_group_indexes(servers_dir: Path) -> None:
 # ---------------------------
 # Main sync logic
 # ---------------------------
+
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Sync MCP servers catalog")
@@ -354,16 +362,18 @@ def main() -> None:
         seen_keys.add(key)
         status = (manifest.get("lifecycle") or {}).get("status", "active")
 
-        top_items.append({
-            "type": "mcp_server",
-            "id": mid,
-            "name": manifest.get("name"),
-            "transport": transport,
-            "status": status,
-            "manifest_path": rel_manifest,
-            "repo": f"https://github.com/{repo_full}",
-            "subpath": subpath,
-        })
+        top_items.append(
+            {
+                "type": "mcp_server",
+                "id": mid,
+                "name": manifest.get("name"),
+                "transport": transport,
+                "status": status,
+                "manifest_path": rel_manifest,
+                "repo": f"https://github.com/{repo_full}",
+                "subpath": subpath,
+            }
+        )
 
         # Only active manifests go into ingestion list
         if status == "active":
@@ -390,16 +400,18 @@ def main() -> None:
         mid = str(m.get("id") or "").strip()
         rel_manifest = str(mf_path.relative_to(catalog_root)).replace("\\", "/")
 
-        top_items.append({
-            "type": "mcp_server",
-            "id": mid,
-            "name": m.get("name"),
-            "transport": transport,
-            "status": "deprecated",
-            "manifest_path": rel_manifest,
-            "repo": f"https://github.com/{repo_full}",
-            "subpath": subpath,
-        })
+        top_items.append(
+            {
+                "type": "mcp_server",
+                "id": mid,
+                "name": m.get("name"),
+                "transport": transport,
+                "status": "deprecated",
+                "manifest_path": rel_manifest,
+                "repo": f"https://github.com/{repo_full}",
+                "subpath": subpath,
+            }
+        )
 
     # Rebuild group indexes
     rebuild_group_indexes(servers_dir)
