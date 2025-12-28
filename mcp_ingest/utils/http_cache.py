@@ -132,9 +132,7 @@ def get_with_etag(
                     logger.info(f"Cache hit (304) for {url}")
                     if cached_body is None:
                         # We have an ETag but no body - re-fetch without ETag
-                        logger.warning(
-                            f"Cache has ETag but no body for {url}, re-fetching"
-                        )
+                        logger.warning(f"Cache has ETag but no body for {url}, re-fetching")
                         del h["If-None-Match"]
                         continue
 
@@ -147,7 +145,7 @@ def get_with_etag(
 
                 # Handle rate limiting (403/429)
                 if r.status_code in (403, 429):
-                    wait_time = 2 ** attempt
+                    wait_time = 2**attempt
                     reset_time = r.headers.get("X-RateLimit-Reset")
 
                     logger.warning(
@@ -161,9 +159,7 @@ def get_with_etag(
                             now = int(time.time())
                             wait_until_reset = max(0, reset_ts - now)
                             if wait_until_reset < 300:  # Don't wait more than 5 min
-                                logger.info(
-                                    f"Rate limit resets in {wait_until_reset}s"
-                                )
+                                logger.info(f"Rate limit resets in {wait_until_reset}s")
                                 time.sleep(min(wait_time, wait_until_reset))
                                 continue
                         except ValueError:
@@ -198,7 +194,7 @@ def get_with_etag(
                 if attempt == max_retries - 1:
                     logger.error(f"HTTP error after {max_retries} attempts: {e}")
                     raise
-                wait_time = 2 ** attempt
+                wait_time = 2**attempt
                 logger.warning(
                     f"HTTP error (attempt {attempt + 1}/{max_retries}): {e}, "
                     f"waiting {wait_time}s"
@@ -210,7 +206,7 @@ def get_with_etag(
                 if attempt == max_retries - 1:
                     logger.error(f"Request error after {max_retries} attempts: {e}")
                     raise
-                wait_time = 2 ** attempt
+                wait_time = 2**attempt
                 logger.warning(
                     f"Request error (attempt {attempt + 1}/{max_retries}): {e}, "
                     f"waiting {wait_time}s"
@@ -257,9 +253,7 @@ def get_cache_stats() -> dict[str, Any]:
         # Calculate age statistics
         now = time.time()
         ages = [
-            now - entry.get("timestamp", now)
-            for entry in cache.values()
-            if "timestamp" in entry
+            now - entry.get("timestamp", now) for entry in cache.values() if "timestamp" in entry
         ]
 
         return {
