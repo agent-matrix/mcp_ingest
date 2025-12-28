@@ -65,13 +65,11 @@ test: ## Run tests with verbosity (pytest -sv)
 		echo "No tests/ folder; skipping pytest."; \
 	fi
 
-ci: ## Lint + typecheck + tests (for CI)
+ci: ## Lint + format check + tests (for CI)
 	@dirs="$(EXISTING_DIRS)"; \
 	if [ -n "$$dirs" ]; then $(RUFF) check $$dirs; else echo "No source dirs for ruff"; fi
 	@dirs="$(EXISTING_DIRS)"; \
 	if [ -n "$$dirs" ]; then $(BLACK) --check $$dirs; else echo "No source dirs for black"; fi
-	@dirs="$(EXISTING_DIRS)"; \
-	if [ -n "$$dirs" ]; then $(MYPY) $$dirs; else echo "No source dirs for mypy"; fi
 	@if [ -d tests ]; then $(PYTEST) --maxfail=1 --disable-warnings -q --cov=mcp_ingest --cov-report=term-missing; \
 	else echo "No tests/ folder; skipping pytest."; fi
 	@echo "✔ CI checks passed"

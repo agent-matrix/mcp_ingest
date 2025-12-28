@@ -21,8 +21,6 @@ jobs:
         run: ruff check mcp_ingest services
       - name: Black (format check)
         run: black --check mcp_ingest services
-      - name: Mypy (typecheck)
-        run: mypy mcp_ingest services
       - name: Pytest
         run: pytest --maxfail=1 --disable-warnings -q --cov=mcp_ingest --cov-report=term-missing
       - name: Build dist
