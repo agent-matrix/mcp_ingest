@@ -51,6 +51,19 @@ def pick_links(server: dict[str, Any]) -> dict[str, Any]:
     return links
 
 
+def build_lifecycle(status: str) -> dict[str, Any]:
+    """
+    Build lifecycle object, omitting None values for schema compliance.
+
+    The catalog schema requires deprecated_at/reason/replaced_by to be strings when present,
+    so we omit them entirely when they are None.
+    """
+    lifecycle: dict[str, Any] = {"status": status}
+    # Only include optional fields if they have values
+    # deprecated_at, reason, replaced_by are omitted when None
+    return lifecycle
+
+
 def to_stdio_exec(pkg: dict[str, Any]) -> dict[str, Any]:
     """
     Convert registry package to exec command for STDIO transport.
@@ -123,7 +136,7 @@ def normalize_registry_server(
     variables = inputs.get("variables") or {}
 
     # 1) Process packages => STDIO manifests
-    for pkg in (server.get("packages") or []):
+    for pkg in server.get("packages") or []:
         reg_type = pkg.get("registryType")
         identifier = pkg.get("identifier")
         pkg_version = pkg.get("version")
@@ -150,12 +163,7 @@ def normalize_registry_server(
                 "updated_at": updated_at,
                 "identity_key": short_hash(variant_key),
             },
-            "lifecycle": {
-                "status": status,
-                "deprecated_at": None,
-                "reason": None,
-                "replaced_by": None,
-            },
+            "lifecycle": build_lifecycle(status),
             "harvest": {"seen_in_latest_run": True, "last_seen_at": utc_now_iso()},
         }
 
@@ -172,7 +180,7 @@ def normalize_registry_server(
         manifests.append(manifest)
 
     # 2) Process remotes => SSE/WS manifests
-    for remote in (server.get("remotes") or []):
+    for remote in server.get("remotes") or []:
         rtype = (remote.get("transport") or remote.get("type") or "").upper()
         url = remote.get("url")
 
@@ -206,12 +214,7 @@ def normalize_registry_server(
                 "updated_at": updated_at,
                 "identity_key": short_hash(variant_key),
             },
-            "lifecycle": {
-                "status": status,
-                "deprecated_at": None,
-                "reason": None,
-                "replaced_by": None,
-            },
+            "lifecycle": build_lifecycle(status),
             "harvest": {"seen_in_latest_run": True, "last_seen_at": utc_now_iso()},
         }
 

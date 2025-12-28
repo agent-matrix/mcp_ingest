@@ -196,9 +196,9 @@ def cmd_harvest_source(args: argparse.Namespace) -> None:
         register=bool(args.register),
         matrixhub=args.matrixhub,
         log_file=args.log_file,
-        emit_minimal=bool(getattr(args, 'emit_minimal', False)),
+        emit_minimal=bool(getattr(args, "emit_minimal", False)),
         top=int(args.top) if int(args.top) > 0 else None,
-        base_only=bool(getattr(args, 'base_only', False)),
+        base_only=bool(getattr(args, "base_only", False)),
     )
 
     _print_json(summary)
@@ -210,7 +210,9 @@ def cmd_harvest_source(args: argparse.Namespace) -> None:
 
 def cmd_harvest_registry(args: argparse.Namespace) -> None:
     if harvest_registry is None:  # pragma: no cover
-        raise SystemExit("harvest-registry is unavailable: httpx dependency required (pip install httpx)")
+        raise SystemExit(
+            "harvest-registry is unavailable: httpx dependency required (pip install httpx)"
+        )
 
     index_path = harvest_registry(
         registry_base_url=args.registry_base,
