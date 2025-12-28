@@ -45,13 +45,19 @@ def main() -> None:
     errors = 0
 
     if missing_from_index:
-        print(f"❌ Manifests in catalog but not in index ({len(missing_from_index)}):", file=sys.stderr)
+        print(
+            f"❌ Manifests in catalog but not in index ({len(missing_from_index)}):",
+            file=sys.stderr,
+        )
         for path in sorted(missing_from_index):
             print(f"   - {path}", file=sys.stderr)
         errors += len(missing_from_index)
 
     if missing_from_catalog:
-        print(f"❌ Manifests in index but not in catalog ({len(missing_from_catalog)}):", file=sys.stderr)
+        print(
+            f"❌ Manifests in index but not in catalog ({len(missing_from_catalog)}):",
+            file=sys.stderr,
+        )
         for path in sorted(missing_from_catalog):
             print(f"   - {path}", file=sys.stderr)
         errors += len(missing_from_catalog)
