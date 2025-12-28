@@ -134,22 +134,24 @@ tools: ## Print tool versions in the current venv
 # -----------------------------------------------------------------------------
 catalog-help: ## Show catalog automation help
 	@echo "===================================================================="
-	@echo "Catalog Automation Examples"
+	@echo "Catalog Automation Commands"
 	@echo "===================================================================="
 	@echo ""
-	@echo "These commands demonstrate the catalog automation reference"
-	@echo "implementation in examples/catalog-automation/"
+	@echo "Local Setup & Testing:"
+	@echo "  make catalog-example       Copy automation files to ../catalog"
+	@echo "  make catalog-test          Test automation locally (safe)"
 	@echo ""
-	@echo "Commands:"
-	@echo "  make catalog-example   Copy automation files to ../catalog"
-	@echo "  make catalog-test      Test automation locally (safe)"
-	@echo "  make catalog-help      This help message"
+	@echo "Live Sync to agent-matrix/catalog:"
+	@echo "  make catalog-sync          Trigger GitHub Actions workflow"
+	@echo "  make catalog-sync-watch    Trigger workflow and watch it run"
+	@echo "  make catalog-sync-status   Check latest workflow runs"
 	@echo ""
 	@echo "Documentation:"
+	@echo "  See: CATALOG_DEPLOYMENT.md"
 	@echo "  See: examples/catalog-automation/README.md"
 	@echo "  See: docs/catalog-automation.md"
 	@echo ""
-	@echo "After copying to your catalog repo, use:"
+	@echo "After copying to your catalog repo:"
 	@echo "  cd ../catalog"
 	@echo "  make sync         # Full sync (harvest → dedupe → validate)"
 	@echo "  make help         # See all catalog commands"
@@ -187,3 +189,44 @@ catalog-test: ## Test catalog automation locally (requires ../catalog)
 	@echo "🧪 Testing catalog automation..."
 	@cd ../catalog && make test-sync 2>/dev/null || \
 		echo "❌ Catalog automation not set up. Run 'make catalog-example' first."
+
+catalog-sync: ## Trigger live catalog sync workflow (requires gh CLI)
+	@echo "🚀 Triggering catalog sync workflow..."
+	@if ! command -v gh >/dev/null 2>&1; then \
+		echo "❌ GitHub CLI (gh) not found. Install: https://cli.github.com/"; \
+		exit 1; \
+	fi
+	@gh workflow run sync-to-catalog.yml \
+		-f catalog_repo="agent-matrix/catalog" \
+		-f source_repo="https://github.com/modelcontextprotocol/servers"
+	@echo "✅ Workflow triggered!"
+	@echo ""
+	@echo "Monitor status:"
+	@echo "  gh run list --workflow=sync-to-catalog.yml --limit 1"
+	@echo "  gh run watch"
+	@echo ""
+	@echo "View results:"
+	@echo "  https://github.com/agent-matrix/mcp_ingest/actions"
+	@echo "  https://github.com/agent-matrix/catalog/pulls"
+
+catalog-sync-watch: ## Trigger catalog sync and watch it run
+	@echo "🚀 Triggering catalog sync workflow..."
+	@if ! command -v gh >/dev/null 2>&1; then \
+		echo "❌ GitHub CLI (gh) not found. Install: https://cli.github.com/"; \
+		exit 1; \
+	fi
+	@gh workflow run sync-to-catalog.yml \
+		-f catalog_repo="agent-matrix/catalog" \
+		-f source_repo="https://github.com/modelcontextprotocol/servers"
+	@echo "⏳ Waiting for workflow to start..."
+	@sleep 5
+	@echo "👀 Watching workflow run..."
+	@gh run watch
+
+catalog-sync-status: ## Check status of latest catalog sync
+	@if ! command -v gh >/dev/null 2>&1; then \
+		echo "❌ GitHub CLI (gh) not found. Install: https://cli.github.com/"; \
+		exit 1; \
+	fi
+	@echo "📊 Latest catalog sync workflow runs:"
+	@gh run list --workflow=sync-to-catalog.yml --limit 5

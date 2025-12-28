@@ -333,6 +333,33 @@ def harvest_repo(
 
 PY_SERVER_FILENAMES = {"server.py", "app.py", "main.py"}
 
+# Directories to ignore during candidate discovery (vendor/build/cache dirs)
+IGNORE_DIR_NAMES = {
+    "node_modules",
+    ".git",
+    ".hg",
+    ".svn",
+    "__pycache__",
+    ".venv",
+    "venv",
+    "dist",
+    "build",
+    "target",
+    ".tox",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    "vendor",
+    ".next",
+    ".nuxt",
+    "out",
+}
+
+
+def _is_ignored_dir(p: Path) -> bool:
+    """Check if path contains any ignored directory in its components."""
+    return any(part in IGNORE_DIR_NAMES for part in p.parts)
+
 
 def _iter_candidate_dirs(root: Path) -> Iterable[Path]:
     """Yield likely MCP server folders under *root*.
@@ -362,6 +389,8 @@ def _iter_candidate_dirs(root: Path) -> Iterable[Path]:
             for sub in child.rglob("*"):
                 if not sub.is_dir():
                     continue
+                if _is_ignored_dir(sub):
+                    continue
                 if _looks_like_py_server_dir(sub):
                     add(sub, "rglob:py-server")
                 elif _has_package_json(sub):
@@ -377,6 +406,8 @@ def _iter_candidate_dirs(root: Path) -> Iterable[Path]:
     max_depth = 4
     for sub in root.rglob("*"):
         if not sub.is_dir():
+            continue
+        if _is_ignored_dir(sub):
             continue
         if _depth(root, sub) > max_depth:
             continue

@@ -85,7 +85,7 @@ def enrich_manifest(
     - All additions are backward-compatible and safe
     """
     import json
-    from datetime import datetime
+    from datetime import datetime, timezone
 
     doc = json.loads(manifest_path.read_text(encoding="utf-8"))
 
@@ -119,7 +119,7 @@ def enrich_manifest(
 
     # Harvest timestamp
     if "harvested_at" not in prov:
-        prov["harvested_at"] = datetime.now(datetime.UTC).isoformat()
+        prov["harvested_at"] = datetime.now(timezone.utc).isoformat()
 
     # Source repository information
     if git_origin:
@@ -149,7 +149,7 @@ def enrich_manifest(
 
     # Harvester version (useful for debugging)
     prov.setdefault("harvester", "mcp-ingest")
-    prov.setdefault("harvester_version", "0.1.1")
+    prov.setdefault("harvester_version", "0.1.2")
 
     # Artifacts: ensure a git entry if we have origin/ref
     arts = doc.setdefault("artifacts", [])

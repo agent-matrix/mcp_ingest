@@ -1,0 +1,172 @@
+name: Sync to Catalog Repo
+
+on:
+  schedule:
+    - cron: "15 2 * * *"   # 02:15 UTC daily
+  workflow_dispatch:       # Allow manual trigger
+    inputs:
+      catalog_repo:
+        description: 'Catalog repository (owner/repo)'
+        required: false
+        default: 'agent-matrix/catalog'
+      source_repo:
+        description: 'Source repository to harvest'
+        required: false
+        default: 'https://github.com/modelcontextprotocol/servers'
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout mcp_ingest
+        uses: actions/checkout@v4
+        with:
+          path: mcp_ingest
+
+      - name: Checkout catalog
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.inputs.catalog_repo || 'agent-matrix/catalog' }}
+          token: ${{ secrets.CATALOG_PAT || secrets.GITHUB_TOKEN }}
+          path: catalog
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-sync-catalog-${{ hashFiles('mcp_ingest/pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-sync-catalog-
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install jsonschema ruff
+
+      - name: Install mcp_ingest from source
+        run: |
+          cd mcp_ingest
+          pip install -e ".[dev,harvester]"
+          python -c "import mcp_ingest; print(f'✓ mcp_ingest {mcp_ingest.__version__} installed')"
+
+      - name: Copy scripts to catalog
+        run: |
+          mkdir -p catalog/scripts
+          cp mcp_ingest/examples/catalog-automation/scripts/sync_mcp_servers.py catalog/scripts/
+          cp mcp_ingest/examples/catalog-automation/scripts/validate_*.py catalog/scripts/
+          chmod +x catalog/scripts/*.py
+
+      - name: Copy schema to catalog
+        run: |
+          mkdir -p catalog/schema
+          if [ ! -f catalog/schema/mcp_server.schema.json ]; then
+            cp mcp_ingest/examples/catalog-automation/schema/mcp_server.schema.json catalog/schema/
+          fi
+
+      - name: Run catalog sync
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd catalog
+          python scripts/sync_mcp_servers.py \
+            --source-repo "${{ github.event.inputs.source_repo || 'https://github.com/modelcontextprotocol/servers' }}" \
+            --catalog-root "." \
+            --servers-dir "servers" \
+            --index-file "index.json" \
+            --max-parallel 8
+
+      - name: Validate catalog structure
+        run: |
+          cd catalog
+          python scripts/validate_catalog_structure.py
+
+      - name: Validate catalog schemas
+        run: |
+          cd catalog
+          python scripts/validate_catalog_schemas.py
+
+      - name: Validate catalog index
+        run: |
+          cd catalog
+          python scripts/validate_catalog_index.py
+
+      - name: Check for changes
+        id: changes
+        run: |
+          cd catalog
+          if [[ -n $(git status --porcelain) ]]; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "✓ Catalog has changes"
+          else
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "✓ No changes to catalog"
+          fi
+
+      - name: Create pull request
+        if: steps.changes.outputs.has_changes == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.CATALOG_PAT || secrets.GITHUB_TOKEN }}
+          path: catalog
+          commit-message: "chore(sync): update MCP servers catalog"
+          title: "chore(sync): automated catalog sync from mcp_ingest"
+          body: |
+            ## Automated Catalog Sync
+
+            This PR updates the MCP servers catalog using `mcp_ingest` v${{ steps.version.outputs.version || '0.1.2' }}.
+
+            ### Source
+            - **Harvested from**: ${{ github.event.inputs.source_repo || 'https://github.com/modelcontextprotocol/servers' }}
+            - **Triggered by**: ${{ github.event_name }}
+            - **Workflow run**: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            ### Changes
+            - Relative links resolved automatically
+            - Provenance metadata included
+            - HTTP caching enabled
+            - Vendor directories filtered (no node_modules)
+
+            ### Validation
+            - ✅ Catalog structure validated
+            - ✅ JSON schemas validated
+            - ✅ Index consistency checked
+            - ✅ No duplicate IDs
+
+            ### Manifest Tracking
+            - Active manifests listed in `index.json.manifests[]`
+            - Deprecated manifests marked but preserved
+            - All paths are relative (no URLs)
+
+            **Powered by:** [mcp_ingest](https://github.com/${{ github.repository }}) @ ${{ github.sha }}
+          branch: bot/sync-mcp-servers
+          delete-branch: true
+          labels: |
+            automated
+            sync
+            catalog
+
+      - name: Summary
+        run: |
+          cd catalog
+          echo "## Sync Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f index.json ]; then
+            total=$(jq '.counts.total_items // 0' index.json)
+            active=$(jq '.counts.active_manifests // 0' index.json)
+            deprecated=$(jq '.counts.deprecated_added_this_run // 0' index.json)
+            echo "- **Total items**: $total" >> $GITHUB_STEP_SUMMARY
+            echo "- **Active manifests**: $active" >> $GITHUB_STEP_SUMMARY
+            echo "- **Newly deprecated**: $deprecated" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Has changes**: ${{ steps.changes.outputs.has_changes }}" >> $GITHUB_STEP_SUMMARY
