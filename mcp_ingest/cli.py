@@ -22,6 +22,7 @@ from typing import Any
 from .detect.fastmcp import detect_path as detect_fastmcp
 from .sdk import autoinstall as sdk_autoinstall
 from .sdk import describe as sdk_describe
+from .utils.auth import get_matrixhub_token
 
 # Optional (Stage-1+: repo harvester)
 try:  # pragma: no cover - optional dependency within the package
@@ -103,6 +104,10 @@ def cmd_register(args: argparse.Namespace) -> None:
         raise SystemExit(f"manifest not found: {mpath}")
     manifest = json.loads(mpath.read_text(encoding="utf-8"))
 
+    # Non-breaking: default to env token if --token is not provided
+    if not args.token:
+        args.token = get_matrixhub_token()
+
     res = sdk_autoinstall(
         matrixhub_url=args.matrixhub,
         manifest=manifest,
@@ -122,6 +127,10 @@ def cmd_pack(args: argparse.Namespace) -> None:
     url = args.url or report.server_url or ""
     if not url and args.register:
         raise SystemExit("--url is required for --register")
+
+    # Non-breaking: default to env token if --token is not provided
+    if args.register and not args.token:
+        args.token = get_matrixhub_token()
 
     tools = [t.get("name") or t.get("id") for t in report.tools] if report.tools else []
 

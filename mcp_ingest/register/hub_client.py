@@ -5,13 +5,15 @@ from typing import Any
 import httpx
 
 from ..utils.idempotency import RetryConfig, retry_request
+from ..utils.auth import get_matrixhub_token
 
 
 class HubClient:
     def __init__(self, base_url: str, *, token: str | None = None, timeout: float = 15.0):
         # The slash '/' must be a string literal.
         self.base_url = base_url.rstrip("/")
-        self.token = token
+        # Non-breaking: if token not provided, try env (MATRIX_HUB_TOKEN, MATRIX_TOKEN, API_TOKEN)
+        self.token = token or get_matrixhub_token()
         self.timeout = timeout
 
     def _headers(self) -> dict[str, str]:
@@ -37,4 +39,14 @@ class HubClient:
                 return r.status_code, data
 
         cfg = RetryConfig(attempts=3, base_delay=0.6, max_delay=4.0)
-        return retry_request(_do, cfg=cfg)
+        try:
+            return retry_request(_do, cfg=cfg)
+        except Exception as e:
+            # Friendly hint for the common case after Matrix-Hub hardening
+            msg = str(e)
+            if "request failed (401)" in msg or "request failed (403)" in msg:
+                msg += (
+                    " — auth required: set MATRIX_HUB_TOKEN (preferred) or pass --token "
+                    "to mcp-ingest register/pack."
+                )
+            raise type(e)(msg) from e

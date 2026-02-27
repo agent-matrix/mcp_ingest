@@ -49,6 +49,18 @@ pip install -e ".[dev,harvester]"
 
 ## Quickstart
 
+### Authentication (important with hardened Matrix-Hub)
+
+Matrix-Hub now protects admin endpoints like `POST /catalog/install`.
+
+Set an operator token (preferred env var):
+
+```bash
+export MATRIX_HUB_TOKEN="...operator token..."
+```
+
+Or pass `--token` to `mcp-ingest register/pack`.
+
 ### SDK (authors)
 
 ```python
