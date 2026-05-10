@@ -9,6 +9,29 @@ from typing import Any
 __all__ = ["normalize_registry_server"]
 
 
+# Default runtime hint per registry type, used when the registry payload
+# omits the optional `runtimeHint` field. Without this fallback, otherwise
+# valid servers (e.g. io.github.ExpertVagabond/watsonx) get marked
+# `disabled` even though their identifier and version are present.
+RUNTIME_HINT_BY_TYPE: dict[str, str] = {
+    "npm": "npx",
+    "pypi": "uvx",
+    "oci": "docker",
+    "docker": "docker",
+}
+
+# Version separator for `<identifier><sep><version>` per registry type.
+# npm uses `name@version`; pypi/uvx uses `name==version`; OCI/docker uses
+# `image:tag`. The previous implementation hard-coded `==` which produced
+# unrunnable commands like `npx pkg==1.0.1` for npm packages.
+VERSION_SEP_BY_TYPE: dict[str, str] = {
+    "npm": "@",
+    "pypi": "==",
+    "oci": ":",
+    "docker": ":",
+}
+
+
 def utc_now_iso() -> str:
     """Get current UTC timestamp in ISO format (Python 3.11 compatible)."""
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
@@ -74,25 +97,30 @@ def to_stdio_exec(pkg: dict[str, Any]) -> dict[str, Any] | None:
     - registryType (pypi/npm/oci/...)
     - identifier
     - version
-    - runtimeHint (uvx/npx/docker/...)
+    - runtimeHint (uvx/npx/docker/...) - optional
     - runtimeArguments []
 
-    Returns None if package lacks required metadata (runtimeHint or identifier).
+    When `runtimeHint` is absent we infer it from `registryType`. The
+    version separator also varies per type (`@` for npm, `==` for pypi,
+    `:` for oci/docker). Returns None only if neither a hint nor a
+    derivable hint is available, or if `identifier` is missing.
     """
+    reg_type = (pkg.get("registryType") or "").strip().lower()
     rt = (pkg.get("runtimeHint") or "").strip()
+    if not rt:
+        rt = RUNTIME_HINT_BY_TYPE.get(reg_type, "")
+
     args = pkg.get("runtimeArguments") or []
     ident = pkg.get("identifier")
     ver = pkg.get("version")
 
-    # Build command based on runtime hint
-    if rt and ident and ver:
-        # Include version pin for deterministic installs
-        return {"cmd": [rt, *args, f"{ident}=={ver}"], "env": {}}
-    if rt and ident:
-        return {"cmd": [rt, *args, str(ident)], "env": {}}
+    if not (rt and ident):
+        return None
 
-    # Return None for incomplete metadata (caller will mark as disabled)
-    return None
+    sep = VERSION_SEP_BY_TYPE.get(reg_type, "==")
+    if ver:
+        return {"cmd": [rt, *args, f"{ident}{sep}{ver}"], "env": {}}
+    return {"cmd": [rt, *args, str(ident)], "env": {}}
 
 
 def normalize_registry_server(
@@ -151,9 +179,17 @@ def normalize_registry_server(
         # Check if we can build a valid exec command
         exec_cmd = to_stdio_exec(pkg)
         if exec_cmd is None:
-            # Missing runtimeHint or identifier - mark as disabled
+            # Can't infer a runner even after the registryType fallback;
+            # mark as disabled with the precise reason so operators can
+            # tell what's missing without re-reading the manifest.
             manifest_status = "disabled"
-            lifecycle_reason = "Missing required package metadata (runtimeHint or identifier)"
+            if not identifier:
+                lifecycle_reason = "Missing required package metadata (identifier)"
+            else:
+                lifecycle_reason = (
+                    "Missing required package metadata (runtimeHint not provided "
+                    f"and registryType={reg_type!r} not in the inference table)"
+                )
         else:
             manifest_status = status
             lifecycle_reason = None
