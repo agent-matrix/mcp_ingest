@@ -381,8 +381,8 @@ def build_parser() -> argparse.ArgumentParser:
     hr.add_argument(
         "--limit",
         type=int,
-        default=10,
-        help="Page size for API pagination (default: 10, adjust based on registry limits)",
+        default=100,
+        help="Page size for API pagination (default: 100, adjust based on registry limits)",
     )
     hr.set_defaults(func=cmd_harvest_registry)
 
