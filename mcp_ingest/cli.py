@@ -229,6 +229,8 @@ def cmd_harvest_registry(args: argparse.Namespace) -> None:
         updated_since=args.updated_since,
         top=int(args.top) if int(args.top) > 0 else None,
         limit=int(args.limit),
+        promote_tools=not args.no_promote_tools,
+        promote_agents=not args.no_promote_agents,
     )
 
     _print_json({"ok": True, "index_path": str(index_path)})
@@ -383,6 +385,27 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=100,
         help="Page size for API pagination (default: 100, adjust based on registry limits)",
+    )
+    hr.add_argument(
+        "--no-promote-tools",
+        action="store_true",
+        default=False,
+        help=(
+            "Disable auto-promotion of MCP servers into sibling `tool` catalog "
+            "entries. Promotion is on by default so the MatrixHub Tools tab "
+            "stays populated."
+        ),
+    )
+    hr.add_argument(
+        "--no-promote-agents",
+        action="store_true",
+        default=False,
+        help=(
+            "Disable auto-promotion of MCP servers into sibling `agent` "
+            "catalog entries. Promotion is on by default and only fires when "
+            "the parent server shows agent signal (name suffix, description "
+            "keywords, or 'agent' tag)."
+        ),
     )
     hr.set_defaults(func=cmd_harvest_registry)
 

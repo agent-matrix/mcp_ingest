@@ -35,6 +35,11 @@ dev = [
     "build>=1.0",
     "twine>=4.0",
     "types-PyYAML",
+    # Used by tests/test_promote_schema.py to validate promoted tool/agent
+    # manifests against vendored matrix-hub JSON schemas. Keeping it under
+    # [dev] (not [harvester]) avoids forcing a runtime dependency on
+    # operators who only need the harvester CLI.
+    "jsonschema>=4.20",
 ]
 harvester = [
     "fastapi>=0.110",

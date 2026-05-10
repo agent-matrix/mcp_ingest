@@ -11,6 +11,7 @@ from typing import Any
 
 from .client import RegistryClient
 from .normalize import normalize_registry_server
+from .promote import promote_to_agent, promote_to_tool
 
 __all__ = ["harvest_registry"]
 
@@ -58,12 +59,15 @@ def harvest_registry(
     updated_since: str | None = None,
     top: int | None = None,
     limit: int = 100,
+    promote_tools: bool = True,
+    promote_agents: bool = True,
 ) -> Path:
     """
     Harvest MCP servers from Registry API into catalog format.
 
     This produces a clean, deterministic catalog with:
     - servers/** as source of truth
+    - tools/** and agents/** as promoted siblings (when enabled)
     - relative paths in index.json
     - proper lifecycle states
     - stable manifest IDs
@@ -80,6 +84,14 @@ def harvest_registry(
         Limit to first N servers (for testing)
     limit : int
         Page size for API pagination
+    promote_tools : bool
+        If True (default), each high-quality active mcp_server also yields
+        a sibling `tool` manifest under tools/<group>/<variant>/manifest.json
+        so the MatrixHub Tools tab is populated.
+    promote_agents : bool
+        If True (default), mcp_servers showing agent signal also yield a
+        sibling `agent` manifest under agents/<group>/<variant>/manifest.json.
+        Conservative; expect roughly 1-3% of active servers to qualify.
 
     Returns
     -------
@@ -100,11 +112,15 @@ def harvest_registry(
 
     servers_dir = out_dir / "servers"
     servers_dir.mkdir(parents=True, exist_ok=True)
+    tools_dir = out_dir / "tools"
+    agents_dir = out_dir / "agents"
 
     items: list[dict[str, Any]] = []
     manifests_active: list[str] = []
     server_count = 0
     manifest_count = 0
+    promoted_tools_count = 0
+    promoted_agents_count = 0
 
     for srv in client.iter_servers_latest(updated_since=updated_since, limit=limit, top=top):
         server_count += 1
@@ -154,6 +170,56 @@ def harvest_registry(
                 if status == "active":
                     manifests_active.append(rel)
 
+                # ----- Promotion to sibling tool / agent entries -----
+                # Each promoted entry preserves the parent's
+                # mcp_registration block so MatrixHub's one-click install
+                # works without a second lookup.
+                if promote_tools and status == "active":
+                    tool = promote_to_tool(m)
+                    if tool is not None:
+                        t_group, t_variant = group_and_variant(tool)
+                        t_dest = tools_dir / t_group / t_variant / "manifest.json"
+                        write_json(t_dest, tool)
+                        t_rel = str(t_dest.relative_to(out_dir)).replace("\\", "/")
+                        items.append(
+                            {
+                                "type": "tool",
+                                "id": tool["id"],
+                                "name": tool.get("name"),
+                                "version": tool.get("version"),
+                                "transport": (tool.get("mcp_registration") or {})
+                                .get("server", {})
+                                .get("transport"),
+                                "status": "active",
+                                "manifest_path": t_rel,
+                            }
+                        )
+                        manifests_active.append(t_rel)
+                        promoted_tools_count += 1
+
+                if promote_agents and status == "active":
+                    agent = promote_to_agent(m)
+                    if agent is not None:
+                        a_group, a_variant = group_and_variant(agent)
+                        a_dest = agents_dir / a_group / a_variant / "manifest.json"
+                        write_json(a_dest, agent)
+                        a_rel = str(a_dest.relative_to(out_dir)).replace("\\", "/")
+                        items.append(
+                            {
+                                "type": "agent",
+                                "id": agent["id"],
+                                "name": agent.get("name"),
+                                "version": agent.get("version"),
+                                "transport": (agent.get("mcp_registration") or {})
+                                .get("server", {})
+                                .get("transport"),
+                                "status": "active",
+                                "manifest_path": a_rel,
+                            }
+                        )
+                        manifests_active.append(a_rel)
+                        promoted_agents_count += 1
+
         except Exception as e:
             log.error("Failed to process server %s: %s", server_name, e, exc_info=True)
             continue
@@ -179,13 +245,24 @@ def harvest_registry(
     deprecated_count = sum(1 for item in deduped_items if item["status"] == "deprecated")
     disabled_count = sum(1 for item in deduped_items if item["status"] == "disabled")
 
+    # Per-type breakdown for the homepage tabs (MCP / Tools / Agents).
+    by_type: dict[str, int] = {}
+    for item in deduped_items:
+        if item.get("status") != "active":
+            continue
+        t = item.get("type") or "mcp_server"
+        by_type[t] = by_type.get(t, 0) + 1
+
     log.info(
-        "Harvest complete: %d servers, %d unique manifests (%d active, %d deprecated, %d disabled)",
+        "Harvest complete: %d servers, %d unique manifests "
+        "(%d active, %d deprecated, %d disabled) | promoted: tools=%d agents=%d",
         server_count,
         len(deduped_items),
         active_count,
         deprecated_count,
         disabled_count,
+        promoted_tools_count,
+        promoted_agents_count,
     )
 
     # Build top-level index.json (MatrixHub-friendly)
@@ -207,6 +284,7 @@ def harvest_registry(
             "active_manifests": active_count,
             "deprecated": deprecated_count,
             "disabled": disabled_count,
+            "by_type": dict(sorted(by_type.items())),
         },
         "items": sorted(deduped_items, key=lambda x: (x["id"], x["manifest_path"])),
         "manifests": sorted(active_manifest_paths),
