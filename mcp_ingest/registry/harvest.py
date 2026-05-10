@@ -57,7 +57,7 @@ def harvest_registry(
     out_dir: str | Path = "catalog",
     updated_since: str | None = None,
     top: int | None = None,
-    limit: int = 10,
+    limit: int = 100,
 ) -> Path:
     """
     Harvest MCP servers from Registry API into catalog format.
