@@ -4,8 +4,8 @@ from typing import Any
 
 import httpx
 
-from ..utils.idempotency import RetryConfig, retry_request
 from ..utils.auth import get_matrixhub_token
+from ..utils.idempotency import RetryConfig, retry_request
 
 
 class HubClient:
